@@ -128,7 +128,7 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <div class="chart-wrap"><canvas id="chartOrders"></canvas></div>
   </div>
   <div class="card">
-    <h2>Динамика суммарной частоты запросов — год к году</h2>
+    <h2>Динамика суммарной частоты запросов — год к году<span id="hfYoySubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span></h2>
     <div class="stat-row">
       <div class="stat"><div class="stat-val" id="stat-hf25">—</div><div class="stat-lbl">Частота запросов 2025</div></div>
       <div class="stat"><div class="stat-val" id="stat-hf26">—</div><div class="stat-lbl">Частота запросов 2026</div></div>
@@ -136,7 +136,7 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <div class="chart-wrap"><canvas id="chartHfYoy"></canvas></div>
   </div>
   <div class="card">
-    <h2>Динамика частоты запросов MPStats</h2>
+    <h2>Динамика частоты запросов MPStats<span id="kwSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span></h2>
     <div class="chart-wrap"><canvas id="chartKw"></canvas></div>
   </div>
   <div class="card">
@@ -416,10 +416,28 @@ function applyFilters() {
     matchesSelectedItems(r.item_name.toLowerCase())
   );
 
+  // Топ-50 ключевиков — приблизительное сопоставление с subject_name + поиск по тексту запроса
+  const topKws = DATA.top_keywords.filter(r =>
+    (!dateTo   || r.d1 <= dateTo)   &&
+    (!dateFrom || r.d2 >= dateFrom) &&
+    matchesSelectedItems(r.item_name.toLowerCase()) &&
+    (!searchQuery || r.keyword.toLowerCase().includes(searchQuery))
+  );
+
+  // Если активен поиск по запросу — оба графика ниже строятся по конкретным
+  // запросам из topKws (те же, что видны в таблице «Топ-50»), а не по
+  // агрегатам категории из kw_weekly, где текста запроса просто нет.
+  const hasSearch = !!searchQuery;
+  const hfSource = hasSearch ? topKws : kws;
+
+  const searchSubtitleText = hasSearch ? ` — по запросу «${searchQuery}»` : '';
+  document.getElementById('hfYoySubtitle').textContent = searchSubtitleText;
+  document.getElementById('kwSubtitle').textContent = searchSubtitleText;
+
   // ВЧ-запросы YoY по неделям (2025 vs 2026), выровнено по номеру ISO-недели
   const hfByYearWeek = {};
   const hfWeekStartByYear = { 2025: {}, 2026: {} };
-  for (const r of kws) {
+  for (const r of hfSource) {
     const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
     if (y !== 2025 && y !== 2026) continue;
     if (!hfByYearWeek[y]) hfByYearWeek[y] = {};
@@ -456,17 +474,29 @@ function applyFilters() {
   document.getElementById('stat-hf25').textContent = fmtNum(sumHf(2025));
   document.getElementById('stat-hf26').textContent = fmtNum(sumHf(2026));
 
+  // Динамика частоты по неделям: без поиска — разбивка ВЧ/СЧ/НЧ по категории (kw_weekly);
+  // с поиском — top_keywords содержит только ВЧ-классифицированные запросы по своей природе
+  // (так же, как таблица «Топ-50»), поэтому показываем одну линию — сумму совпавших запросов.
   const kwByWeek = {};
-  for(const r of kws) {
-    if(!kwByWeek[r.d1]) kwByWeek[r.d1]={hf:0,mf:0,lf:0};
-    kwByWeek[r.d1].hf += r.hf_freq;
-    kwByWeek[r.d1].mf += r.mf_freq;
-    kwByWeek[r.d1].lf += r.lf_freq;
+  if (hasSearch) {
+    for (const r of topKws) {
+      if (!kwByWeek[r.d1]) kwByWeek[r.d1] = { hf:0, mf:0, lf:0 };
+      kwByWeek[r.d1].hf += r.total_freq;
+    }
+  } else {
+    for (const r of kws) {
+      if (!kwByWeek[r.d1]) kwByWeek[r.d1] = { hf:0, mf:0, lf:0 };
+      kwByWeek[r.d1].hf += r.hf_freq;
+      kwByWeek[r.d1].mf += r.mf_freq;
+      kwByWeek[r.d1].lf += r.lf_freq;
+    }
   }
   const kwLabels = Object.keys(kwByWeek).sort();
   chartKw.data = {
     labels: kwLabels.map(l=>l.slice(0,10)),
-    datasets:[
+    datasets: hasSearch ? [
+      {label:'Совпадения по запросу',data:kwLabels.map(l=>kwByWeek[l].hf),borderColor:C.hf,backgroundColor:'rgba(244,114,182,0.1)',fill:true,tension:0.3,pointRadius:2},
+    ] : [
       {label:'ВЧ',data:kwLabels.map(l=>kwByWeek[l].hf),borderColor:C.hf,backgroundColor:'rgba(244,114,182,0.1)',fill:true,tension:0.3,pointRadius:2},
       {label:'СЧ',data:kwLabels.map(l=>kwByWeek[l].mf),borderColor:C.mf,backgroundColor:'rgba(74,222,128,0.1)',fill:true,tension:0.3,pointRadius:2},
       {label:'НЧ',data:kwLabels.map(l=>kwByWeek[l].lf),borderColor:C.lf,backgroundColor:'rgba(251,191,36,0.1)',fill:true,tension:0.3,pointRadius:2},
@@ -474,13 +504,6 @@ function applyFilters() {
   };
   chartKw.update();
 
-  // Топ-20 ключевиков — приблизительное сопоставление с subject_name + поиск по тексту запроса
-  const topKws = DATA.top_keywords.filter(r =>
-    (!dateTo   || r.d1 <= dateTo)   &&
-    (!dateFrom || r.d2 >= dateFrom) &&
-    matchesSelectedItems(r.item_name.toLowerCase()) &&
-    (!searchQuery || r.keyword.toLowerCase().includes(searchQuery))
-  );
   const agg = {};
   for(const r of topKws) {
     if(!agg[r.keyword]) agg[r.keyword]={keyword:r.keyword,freq:0,wb:0,freq_type:r.freq_type,gender:r.gender,item_name:r.item_name};

@@ -124,6 +124,8 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <div class="stat-row">
       <div class="stat"><div class="stat-val" id="stat-o25">—</div><div class="stat-lbl">Заказов 2025</div></div>
       <div class="stat"><div class="stat-val" id="stat-o26">—</div><div class="stat-lbl">Заказов 2026</div></div>
+      <div class="stat" id="stat-our25-wrap" style="display:none;"><div class="stat-val" id="stat-our25" style="color:#4ade80;">—</div><div class="stat-lbl">Наши 2025</div></div>
+      <div class="stat" id="stat-our26-wrap" style="display:none;"><div class="stat-val" id="stat-our26" style="color:#4ade80;">—</div><div class="stat-lbl">Наши 2026</div></div>
     </div>
     <div class="chart-wrap"><canvas id="chartOrders"></canvas></div>
   </div>
@@ -425,6 +427,13 @@ function applyFilters() {
   const s = (arr,y,f) => arr.filter(r => getISOWeekInfo(r.order_date).isoYear===y).reduce((a,r)=>a+(r[f]||0),0);
   document.getElementById('stat-o25').textContent = fmtNum(s(orders,2025,'orders_cnt'));
   document.getElementById('stat-o26').textContent = fmtNum(s(orders,2026,'orders_cnt'));
+
+  document.getElementById('stat-our25-wrap').style.display = ourOnly ? '' : 'none';
+  document.getElementById('stat-our26-wrap').style.display = ourOnly ? '' : 'none';
+  if (ourOnly) {
+    document.getElementById('stat-our25').textContent = fmtNum(s(ordersOur,2025,'orders_cnt'));
+    document.getElementById('stat-our26').textContent = fmtNum(s(ordersOur,2026,'orders_cnt'));
+  }
 
   // MPStats фильтр — приблизительное сопоставление с subject_name (разные таксономии)
   const kws = DATA.kw_weekly.filter(r =>

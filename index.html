@@ -116,7 +116,7 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 </div>
 <div class="grid">
   <div class="card full">
-    <h2>Тренды по категориям <span id="clickedDateBadge" style="display:none;"></span></h2>
+    <h2>Тренды по категориям <span style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">(за 2025 год, на основании частоты запросов месяц к месяцу, запросов &gt; 2000 — защита от шума)</span> <span id="clickedDateBadge" style="display:none;"></span></h2>
     <ul class="trend-list" id="trendList"></ul>
   </div>
   <div class="card">
@@ -571,39 +571,53 @@ function mondayOf(dateStr) {
 // серию, чтобы не задваивать одну и ту же подкатегорию несколько раз.
 // Берём только 2025 год — это полный, надёжный период для сравнения,
 // в отличие от 2026 где данных всего пара недель (шумно и нерепрезентативно).
+// Строит {категория: {месяц (YYYY-MM): суммарная частота запросов}} из данных MPStats.
+// Категория = item_name — объединяем все полы (мужские/женские/детские) в одну
+// серию, чтобы не задваивать одну и ту же подкатегорию несколько раз.
+// Берём только 2025 год — это полный, надёжный период для сравнения,
+// в отличие от 2026 где данных всего пара недель (шумно и нерепрезентативно).
 function computeCategorySeries(kwRows) {
   const map = {};
   for (const r of kwRows) {
     if (!r.item_name || !r.d1.startsWith('2025')) continue;
     const key = r.item_name;
+    const mKey = r.d1.slice(0, 7); // 'YYYY-MM' — группируем недельные данные по месяцу
     if (!map[key]) map[key] = {};
-    map[key][r.d1] = (map[key][r.d1] || 0) + r.total_freq;
+    map[key][mKey] = (map[key][mKey] || 0) + r.total_freq;
   }
   return map;
 }
 
-// Ищет самый заметный рост и самое заметное падение неделя-к-неделе в серии.
-// MIN_ABS — минимальная суммарная частота в обеих неделях, чтобы избежать
-// шумных всплесков на редких низкочастотных категориях.
-function detectEventsForSeries(weekMap) {
-  const MIN_ABS = 500;
-  const weeks = Object.keys(weekMap).sort();
-  if (weeks.length < 4) return null;
+const RU_MONTHS = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+function formatMonthLabel(mKey) {
+  const [y, m] = mKey.split('-').map(Number);
+  return (RU_MONTHS[m - 1] || mKey) + ' ' + y;
+}
+function monthIndex(mKey) {
+  const [y, m] = mKey.split('-').map(Number);
+  return y * 12 + (m - 1);
+}
+
+// Ищет самый заметный рост и самое заметное падение месяц-к-месяцу в серии.
+// MIN_ABS — минимальная суммарная частота в обоих месяцах, чтобы избежать
+// шумных всплесков на редких низкочастотных категориях (порог поднят
+// пропорционально относительно недельного варианта: ~4-5 недель в месяце).
+function detectEventsForSeries(monthMap) {
+  const MIN_ABS = 2000;
+  const months = Object.keys(monthMap).sort();
+  if (months.length < 3) return null; // нужно минимум 3 месяца, чтобы было что сравнивать
   let bestGrowth = null, bestDecline = null;
-  for (let i = 1; i < weeks.length; i++) {
-    const prevDate = new Date(weeks[i-1] + 'T00:00:00');
-    const curDate  = new Date(weeks[i]   + 'T00:00:00');
-    const gapDays  = (curDate - prevDate) / 86400000;
-    if (gapDays > 12) continue; // разрыв в данных — не сравниваем через дыру
-    const prevVal = weekMap[weeks[i-1]];
-    const curVal  = weekMap[weeks[i]];
+  for (let i = 1; i < months.length; i++) {
+    if (monthIndex(months[i]) - monthIndex(months[i-1]) > 1) continue; // разрыв — пропущен месяц, не сравниваем через дыру
+    const prevVal = monthMap[months[i-1]];
+    const curVal  = monthMap[months[i]];
     if (!prevVal || prevVal < MIN_ABS || curVal < MIN_ABS) continue; // отсекаем шум на малых числах
     const change = (curVal - prevVal) / prevVal;
     if (change > 0.4 && (!bestGrowth || change > bestGrowth.change)) {
-      bestGrowth = { change, date: weeks[i] };
+      bestGrowth = { change, date: months[i] };
     }
     if (change < -0.3 && (!bestDecline || change < bestDecline.change)) {
-      bestDecline = { change, date: weeks[i] };
+      bestDecline = { change, date: months[i] };
     }
   }
   return { bestGrowth, bestDecline };
@@ -658,7 +672,7 @@ function renderCategoryTrends(kwRows, itemFilterArr) {
     const label = it.type==='up' ? 'начало роста продаж' : 'падение продаж';
     const pct = Math.round(Math.abs(it.change) * 100);
     const li = document.createElement('li');
-    li.innerHTML = `<span class="trend-cat">${it.subj}</span> ${arrow} ${label} (${pct}%) <span class="trend-date">с ${it.date}</span>`;
+    li.innerHTML = `<span class="trend-cat">${it.subj}</span> ${arrow} ${label} (${pct}%) <span class="trend-date">с ${formatMonthLabel(it.date)}</span>`;
     list.appendChild(li);
   });
 }

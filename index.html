@@ -61,8 +61,9 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 .multiselect-item { display:flex; align-items:center; gap:8px; padding:5px 4px; font-size:13px; cursor:pointer; border-radius:4px; }
 .multiselect-item:hover { background:#212436; }
 .multiselect-item input { cursor:pointer; }
-.checkbox-filter { display:flex; align-items:center; gap:6px; font-size:13px; color:#94a3b8; cursor:pointer; padding:6px 0; white-space:nowrap; }
-.checkbox-filter input { cursor:pointer; width:15px; height:15px; }
+.checkbox-filter { display:flex; align-items:center; gap:6px; padding:6px 0; white-space:nowrap; }
+.filters .checkbox-filter { font-size:13px; color:#94a3b8; text-transform:none; letter-spacing:normal; cursor:pointer; }
+.checkbox-filter input[type="checkbox"] { margin:0; cursor:pointer; width:15px; height:15px; }
 .filter-group label.spacer { visibility:hidden; }
 #loadingOverlay {
   position:fixed; inset:0; background:#0f1117; color:#94a3b8;
@@ -92,11 +93,11 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
   <div class="filter-group">
     <label>Подкатегории</label>
     <div class="multiselect" id="fItemWrap">
-      <button type="button" class="multiselect-btn" id="fItemBtn" onclick="toggleItemDropdown()">Все подкатегории ▾</button>
+      <button type="button" class="multiselect-btn" id="fItemBtn">Все подкатегории ▾</button>
       <div class="multiselect-panel" id="fItemPanel" style="display:none;">
         <div class="multiselect-actions">
-          <button type="button" onclick="selectAllItems()">Выбрать все</button>
-          <button type="button" onclick="clearAllItems()">Очистить</button>
+          <button type="button" id="selectAllItemsBtn">Выбрать все</button>
+          <button type="button" id="clearAllItemsBtn">Очистить</button>
         </div>
         <div class="multiselect-list" id="fItemList"></div>
       </div>
@@ -110,11 +111,8 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <label class="spacer">.</label>
     <label class="checkbox-filter"><input type="checkbox" id="fOurOnly"> Только наши артикулы</label>
   </div>
-  <button class="btn-apply" onclick="applyFilters()">Применить</button>
-  <button class="btn-reset" onclick="resetFilters()">Сбросить</button>
-</div>
-<div style="padding:6px 28px 0;font-size:11px;color:#64748b;background:#151824;">
-  ℹ️ «Только наши артикулы» и «Поиск по запросу» влияют на разные блоки: артикулы — только на «Заказы по неделям» (там есть привязка к SKU), поиск — только на таблицу «Топ-50 запросов» (там есть текст запроса). Данные MPStats (частоты, тренды) привязаны к категориям, а не к конкретным артикулам.
+  <button class="btn-apply" id="btnApply">Применить</button>
+  <button class="btn-reset" id="btnReset">Сбросить</button>
 </div>
 <div class="grid">
   <div class="card full">
@@ -298,6 +296,15 @@ updateItemButtonLabel();
 // Поиск по запросу — живой фильтр таблицы Топ-50 без ожидания кнопки "Применить"
 document.getElementById('fSearch').addEventListener('input', () => applyFilters());
 document.getElementById('fOurOnly').addEventListener('change', () => applyFilters());
+
+// Кнопки биндим через addEventListener, а не через onclick="" в HTML — эти функции
+// объявлены внутри initDashboard() и не видны из глобальной области видимости,
+// куда смотрит инлайновый onclick.
+document.getElementById('fItemBtn').addEventListener('click', toggleItemDropdown);
+document.getElementById('selectAllItemsBtn').addEventListener('click', selectAllItems);
+document.getElementById('clearAllItemsBtn').addEventListener('click', clearAllItems);
+document.getElementById('btnApply').addEventListener('click', applyFilters);
+document.getElementById('btnReset').addEventListener('click', resetFilters);
 
 const allOrderDates = DATA.orders_daily.map(r=>r.order_date).sort();
 const minDate = allOrderDates[0] || '2025-07-01';
@@ -520,7 +527,8 @@ function updateClickedDateBadge(dateFrom, dateTo) {
   const badge = document.getElementById('clickedDateBadge');
   if (dateFrom && dateTo && dateFrom === dateTo) {
     badge.style.display = 'inline';
-    badge.innerHTML = ` — показана дата: ${dateFrom} <button class="clear-date-filter" onclick="clearDateFilter()">Сбросить дату</button>`;
+    badge.innerHTML = ` — показана дата: ${dateFrom} <button class="clear-date-filter" id="clearDateFilterBtn">Сбросить дату</button>`;
+    document.getElementById('clearDateFilterBtn').addEventListener('click', clearDateFilter);
   } else {
     badge.style.display = 'none';
     badge.innerHTML = '';

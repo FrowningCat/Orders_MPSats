@@ -51,6 +51,19 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 .trend-empty { color:#64748b; font-size:13px; padding:8px 0; }
 .clear-date-filter { background:#3b5bdb; color:#fff; border:none; border-radius:6px; padding:4px 12px; font-size:12px; cursor:pointer; margin-left:10px; }
 .clear-date-filter:hover { background:#4c6ef5; }
+.multiselect { position:relative; }
+.multiselect-btn { background:#1a1d27; border:1px solid #2d3148; border-radius:6px; color:#e2e8f0; padding:6px 10px; font-size:13px; cursor:pointer; min-width:180px; max-width:220px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.multiselect-btn:hover { border-color:#60a5fa; }
+.multiselect-panel { position:absolute; top:calc(100% + 4px); left:0; background:#1a1d27; border:1px solid #2d3148; border-radius:8px; padding:8px; min-width:260px; max-height:280px; overflow-y:auto; z-index:50; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+.multiselect-actions { display:flex; gap:8px; margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid #2d3148; }
+.multiselect-actions button { background:transparent; border:1px solid #2d3148; color:#94a3b8; border-radius:4px; padding:3px 8px; font-size:11px; cursor:pointer; }
+.multiselect-actions button:hover { color:#e2e8f0; border-color:#60a5fa; }
+.multiselect-item { display:flex; align-items:center; gap:8px; padding:5px 4px; font-size:13px; cursor:pointer; border-radius:4px; }
+.multiselect-item:hover { background:#212436; }
+.multiselect-item input { cursor:pointer; }
+.checkbox-filter { display:flex; align-items:center; gap:6px; font-size:13px; color:#94a3b8; cursor:pointer; padding:6px 0; white-space:nowrap; }
+.checkbox-filter input { cursor:pointer; width:15px; height:15px; }
+.filter-group label.spacer { visibility:hidden; }
 #loadingOverlay {
   position:fixed; inset:0; background:#0f1117; color:#94a3b8;
   display:flex; align-items:center; justify-content:center;
@@ -77,11 +90,31 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <input type="date" id="fDateTo">
   </div>
   <div class="filter-group">
-    <label>Подкатегория</label>
-    <select id="fItem"><option value="">Все подкатегории</option></select>
+    <label>Подкатегории</label>
+    <div class="multiselect" id="fItemWrap">
+      <button type="button" class="multiselect-btn" id="fItemBtn" onclick="toggleItemDropdown()">Все подкатегории ▾</button>
+      <div class="multiselect-panel" id="fItemPanel" style="display:none;">
+        <div class="multiselect-actions">
+          <button type="button" onclick="selectAllItems()">Выбрать все</button>
+          <button type="button" onclick="clearAllItems()">Очистить</button>
+        </div>
+        <div class="multiselect-list" id="fItemList"></div>
+      </div>
+    </div>
+  </div>
+  <div class="filter-group">
+    <label>Поиск по запросу</label>
+    <input type="text" id="fSearch" placeholder="например: шорты женские летние">
+  </div>
+  <div class="filter-group">
+    <label class="spacer">.</label>
+    <label class="checkbox-filter"><input type="checkbox" id="fOurOnly"> Только наши артикулы</label>
   </div>
   <button class="btn-apply" onclick="applyFilters()">Применить</button>
   <button class="btn-reset" onclick="resetFilters()">Сбросить</button>
+</div>
+<div style="padding:6px 28px 0;font-size:11px;color:#64748b;background:#151824;">
+  ℹ️ «Только наши артикулы» и «Поиск по запросу» влияют на разные блоки: артикулы — только на «Заказы по неделям» (там есть привязка к SKU), поиск — только на таблицу «Топ-50 запросов» (там есть текст запроса). Данные MPStats (частоты, тренды) привязаны к категориям, а не к конкретным артикулам.
 </div>
 <div class="grid">
   <div class="card full">
@@ -204,10 +237,67 @@ const OPT = {
 // Инициализация фильтров
 document.getElementById('updated').textContent = 'Обновлено: ' + DATA.updated_at;
 
-const fItem = document.getElementById('fItem');
-DATA.order_subjects.forEach(r => {
-  const o=document.createElement('option'); o.value=r.subject_name; o.textContent=r.subject_name; fItem.appendChild(o);
+let selectedItems = new Set(); // выбранные подкатегории (subject_name)
+
+function buildItemCheckboxList() {
+  const listEl = document.getElementById('fItemList');
+  listEl.innerHTML = '';
+  DATA.order_subjects.forEach(r => {
+    const label = document.createElement('label');
+    label.className = 'multiselect-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = r.subject_name;
+    cb.addEventListener('change', function(){
+      if (cb.checked) selectedItems.add(cb.value); else selectedItems.delete(cb.value);
+      updateItemButtonLabel();
+    });
+    const span = document.createElement('span');
+    span.textContent = r.subject_name;
+    label.appendChild(cb);
+    label.appendChild(span);
+    listEl.appendChild(label);
+  });
+}
+
+function updateItemButtonLabel() {
+  const btn = document.getElementById('fItemBtn');
+  if (selectedItems.size === 0) btn.textContent = 'Все подкатегории ▾';
+  else if (selectedItems.size === 1) btn.textContent = [...selectedItems][0] + ' ▾';
+  else btn.textContent = 'Выбрано: ' + selectedItems.size + ' ▾';
+}
+
+function toggleItemDropdown() {
+  const panel = document.getElementById('fItemPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+document.addEventListener('click', function(e){
+  const wrap = document.getElementById('fItemWrap');
+  const panel = document.getElementById('fItemPanel');
+  if (wrap && panel && !wrap.contains(e.target)) panel.style.display = 'none';
 });
+
+function selectAllItems() {
+  document.querySelectorAll('#fItemList input[type=checkbox]').forEach(cb => {
+    cb.checked = true;
+    selectedItems.add(cb.value);
+  });
+  updateItemButtonLabel();
+}
+
+function clearAllItems() {
+  document.querySelectorAll('#fItemList input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  selectedItems.clear();
+  updateItemButtonLabel();
+}
+
+buildItemCheckboxList();
+updateItemButtonLabel();
+
+// Поиск по запросу — живой фильтр таблицы Топ-50 без ожидания кнопки "Применить"
+document.getElementById('fSearch').addEventListener('input', () => applyFilters());
+document.getElementById('fOurOnly').addEventListener('change', () => applyFilters());
 
 const allOrderDates = DATA.orders_daily.map(r=>r.order_date).sort();
 const minDate = allOrderDates[0] || '2025-07-01';
@@ -237,13 +327,25 @@ chartKw.options.onClick     = function(evt, elements) { onChartPointClick(evt, e
 function applyFilters() {
   const dateFrom = document.getElementById('fDateFrom').value;
   const dateTo   = document.getElementById('fDateTo').value;
-  const item     = document.getElementById('fItem').value;
+  const selected = [...selectedItems];               // выбранные подкатегории (может быть несколько)
+  const selectedLower = selected.map(s => s.toLowerCase());
+  const searchQuery = document.getElementById('fSearch').value.trim().toLowerCase();
+  const ourOnly = document.getElementById('fOurOnly').checked;
 
-  // Заказы по неделям YoY — точный фильтр по subject_name (реальная категория WB)
+  // true, если выбранных подкатегорий нет, либо itemNameLower пересекается хотя бы с одной из них
+  function matchesSelectedItems(itemNameLower) {
+    if (!selectedLower.length) return true;
+    return selectedLower.some(sel => itemNameLower.includes(sel) || sel.includes(itemNameLower));
+  }
+
+  // Заказы по неделям YoY — точный фильтр по subject_name (реальная категория WB).
+  // "Только наши артикулы" применяется ЗДЕСЬ и только здесь — is_our есть только
+  // в заказах (там связь с nm_id/vendor_code), в MPStats-данных её нет.
   const orders = DATA.orders_daily.filter(r => {
     if (dateFrom && r.order_date < dateFrom) return false;
     if (dateTo   && r.order_date > dateTo)   return false;
-    if (item     && r.subject_name !== item) return false;
+    if (selected.length && !selected.includes(r.subject_name)) return false;
+    if (ourOnly && r.is_our !== 1) return false;
     return true;
   });
 
@@ -301,11 +403,10 @@ function applyFilters() {
   document.getElementById('stat-o26').textContent = fmtNum(s(orders,2026,'orders_cnt'));
 
   // MPStats фильтр — приблизительное сопоставление с subject_name (разные таксономии)
-  const itemLower = item.toLowerCase();
   const kws = DATA.kw_weekly.filter(r =>
     (!dateTo   || r.d1 <= dateTo)   &&
     (!dateFrom || r.d2 >= dateFrom) &&
-    (!item     || r.item_name.toLowerCase().includes(itemLower) || itemLower.includes(r.item_name.toLowerCase()))
+    matchesSelectedItems(r.item_name.toLowerCase())
   );
 
   // ВЧ-запросы YoY по неделям (2025 vs 2026), выровнено по номеру ISO-недели
@@ -366,11 +467,12 @@ function applyFilters() {
   };
   chartKw.update();
 
-  // Топ-20 ключевиков — приблизительное сопоставление с subject_name
+  // Топ-20 ключевиков — приблизительное сопоставление с subject_name + поиск по тексту запроса
   const topKws = DATA.top_keywords.filter(r =>
     (!dateTo   || r.d1 <= dateTo)   &&
     (!dateFrom || r.d2 >= dateFrom) &&
-    (!item     || r.item_name.toLowerCase().includes(itemLower) || itemLower.includes(r.item_name.toLowerCase()))
+    matchesSelectedItems(r.item_name.toLowerCase()) &&
+    (!searchQuery || r.keyword.toLowerCase().includes(searchQuery))
   );
   const agg = {};
   for(const r of topKws) {
@@ -395,14 +497,16 @@ function applyFilters() {
     </tr>`;
   });
 
-  renderCategoryTrends(kws, item);
+  renderCategoryTrends(kws, selected);
   updateClickedDateBadge(dateFrom, dateTo);
 }
 
 function resetFilters() {
   document.getElementById('fDateFrom').value = minDate;
   document.getElementById('fDateTo').value   = maxDate;
-  document.getElementById('fItem').value     = '';
+  clearAllItems();
+  document.getElementById('fSearch').value = '';
+  document.getElementById('fOurOnly').checked = false;
   applyFilters();
 }
 
@@ -475,17 +579,20 @@ function detectEventsForSeries(weekMap) {
 }
 
 // Рендерит текстовые маркеры трендов по категориям (рост/падение), на основе MPStats
-function renderCategoryTrends(kwRows, itemFilter) {
+function renderCategoryTrends(kwRows, itemFilterArr) {
   const list = document.getElementById('trendList');
   list.innerHTML = '';
 
   let subjects;
-  if (itemFilter) {
-    // Если выбрана WB-подкатегория — берём все MPStats-категории, чьё имя ей соответствует
-    const itemLower2 = itemFilter.toLowerCase();
+  if (itemFilterArr && itemFilterArr.length) {
+    // Если выбраны WB-подкатегории — берём все MPStats-категории, чьё имя им соответствует
+    const itemLowerArr = itemFilterArr.map(s => s.toLowerCase());
     subjects = [...new Set(
       kwRows
-        .filter(r => r.item_name.toLowerCase().includes(itemLower2) || itemLower2.includes(r.item_name.toLowerCase()))
+        .filter(r => {
+          const rl = r.item_name.toLowerCase();
+          return itemLowerArr.some(sel => rl.includes(sel) || sel.includes(rl));
+        })
         .map(r => r.item_name)
     )];
   } else {

@@ -219,6 +219,7 @@ const C = {
   y25:'#60a5fa', y25bg:'rgba(96,165,250,0.15)',
   y26:'#f472b6', y26bg:'rgba(244,114,182,0.15)',
   hf:'#f472b6', mf:'#4ade80', lf:'#fbbf24',
+  our:'#4ade80',
 };
 const OPT = {
   responsive:true, maintainAspectRatio:false,
@@ -346,15 +347,16 @@ function applyFilters() {
   }
 
   // Заказы по неделям YoY — точный фильтр по subject_name (реальная категория WB).
-  // "Только наши артикулы" применяется ЗДЕСЬ и только здесь — is_our есть только
-  // в заказах (там связь с nm_id/vendor_code), в MPStats-данных её нет.
+  // "Только наши артикулы" больше НЕ скрывает остальные данные — график всегда
+  // показывает полный объём (2025/2026); при включённом чекбоксе поверх добавляются
+  // ещё две линии — "наши" за каждый год, другим цветом (см. ordersOur ниже).
   const orders = DATA.orders_daily.filter(r => {
     if (dateFrom && r.order_date < dateFrom) return false;
     if (dateTo   && r.order_date > dateTo)   return false;
     if (selected.length && !selected.includes(r.subject_name)) return false;
-    if (ourOnly && r.is_our !== 1) return false;
     return true;
   });
+  const ordersOur = orders.filter(r => r.is_our === 1);
 
   // Единый расчёт ISO-года и ISO-недели прямо из даты — избегаем рассинхрона
   // year_num/week_num на границе декабря/января (31 дек может быть "неделей 1"
@@ -385,13 +387,28 @@ function applyFilters() {
   const allW = [...new Set([...w25,...w26])].sort((a,b)=>a-b);
   const labels = allW.map(w => (weekStartByYear[2026][w] || weekStartByYear[2025][w] || '').slice(0,10));
 
-  chartOrders.data = {
-    labels,
-    datasets:[
-      {label:'2025',data:allW.map(w=>byYear[2025]?.[w]?.o??null),borderColor:C.y25,backgroundColor:C.y25bg,fill:true,tension:0.3,pointRadius:3,spanGaps:true},
-      {label:'2026',data:allW.map(w=>byYear[2026]?.[w]?.o??null),borderColor:C.y26,backgroundColor:C.y26bg,fill:true,tension:0.3,pointRadius:3,spanGaps:true},
-    ]
-  };
+  // "Наши" — та же недельная разбивка, но только по строкам is_our=1.
+  // Выравниваем по тем же неделям (allW), что и общий график, чтобы линии совпадали по оси X.
+  const byYearOur = {};
+  for (const r of ordersOur) {
+    const { isoYear: y, week: w } = getISOWeekInfo(r.order_date);
+    if (y !== 2025 && y !== 2026) continue;
+    if (!byYearOur[y]) byYearOur[y] = {};
+    byYearOur[y][w] = (byYearOur[y][w] || 0) + r.orders_cnt;
+  }
+
+  const ordersDatasets = [
+    {label:'2025',data:allW.map(w=>byYear[2025]?.[w]?.o??null),borderColor:C.y25,backgroundColor:C.y25bg,fill:true,tension:0.3,pointRadius:3,spanGaps:true},
+    {label:'2026',data:allW.map(w=>byYear[2026]?.[w]?.o??null),borderColor:C.y26,backgroundColor:C.y26bg,fill:true,tension:0.3,pointRadius:3,spanGaps:true},
+  ];
+  if (ourOnly) {
+    ordersDatasets.push(
+      {label:'2025 (наши)',data:allW.map(w=>byYearOur[2025]?.[w]??null),borderColor:C.our,backgroundColor:'transparent',borderDash:[],fill:false,tension:0.3,pointRadius:2,spanGaps:true},
+      {label:'2026 (наши)',data:allW.map(w=>byYearOur[2026]?.[w]??null),borderColor:C.our,backgroundColor:'transparent',borderDash:[6,4],fill:false,tension:0.3,pointRadius:2,spanGaps:true},
+    );
+  }
+
+  chartOrders.data = { labels, datasets: ordersDatasets };
   chartOrders.options.plugins.tooltip.callbacks = {
     ...chartOrders.options.plugins.tooltip.callbacks,
     title: (items) => {

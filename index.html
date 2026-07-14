@@ -116,7 +116,6 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <label class="spacer">.</label>
     <label class="checkbox-filter"><input type="checkbox" id="fOurOnly"> Только наши артикулы</label>
   </div>
-  <button class="btn-apply" id="btnApply">Применить</button>
   <button class="btn-reset" id="btnReset">Сбросить</button>
 </div>
 <div class="grid">
@@ -257,6 +256,7 @@ function buildItemCheckboxList() {
     cb.addEventListener('change', function(){
       if (cb.checked) selectedItems.add(cb.value); else selectedItems.delete(cb.value);
       updateItemButtonLabel();
+      applyFilters();
     });
     const span = document.createElement('span');
     span.textContent = r.subject_name;
@@ -290,20 +290,24 @@ function selectAllItems() {
     selectedItems.add(cb.value);
   });
   updateItemButtonLabel();
+  applyFilters();
 }
 
 function clearAllItems() {
   document.querySelectorAll('#fItemList input[type=checkbox]').forEach(cb => { cb.checked = false; });
   selectedItems.clear();
   updateItemButtonLabel();
+  applyFilters();
 }
 
 buildItemCheckboxList();
 updateItemButtonLabel();
 
-// Поиск по запросу — живой фильтр таблицы Топ-50 без ожидания кнопки "Применить"
+// Поиск по запросу, "наши артикулы" и период — живой фильтр без кнопки "Применить"
 document.getElementById('fSearch').addEventListener('input', () => applyFilters());
 document.getElementById('fOurOnly').addEventListener('change', () => applyFilters());
+document.getElementById('fDateFrom').addEventListener('change', () => applyFilters());
+document.getElementById('fDateTo').addEventListener('change', () => applyFilters());
 
 // Кнопки биндим через addEventListener, а не через onclick="" в HTML — эти функции
 // объявлены внутри initDashboard() и не видны из глобальной области видимости,
@@ -311,7 +315,6 @@ document.getElementById('fOurOnly').addEventListener('change', () => applyFilter
 document.getElementById('fItemBtn').addEventListener('click', toggleItemDropdown);
 document.getElementById('selectAllItemsBtn').addEventListener('click', selectAllItems);
 document.getElementById('clearAllItemsBtn').addEventListener('click', clearAllItems);
-document.getElementById('btnApply').addEventListener('click', applyFilters);
 document.getElementById('btnReset').addEventListener('click', resetFilters);
 
 const allOrderDates = DATA.orders_daily.map(r=>r.order_date).sort();

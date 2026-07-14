@@ -13,6 +13,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; backg
 header { background:#1a1d27; border-bottom:1px solid #2d3148; padding:14px 28px; display:flex; align-items:center; justify-content:space-between; }
 header h1 { font-size:17px; font-weight:600; color:#fff; }
 #updated { font-size:12px; color:#64748b; }
+.docs-btn { font-size:12px; color:#94a3b8; background:#1a1d27; border:1px solid #2d3148; border-radius:6px; padding:6px 12px; text-decoration:none; white-space:nowrap; transition:border-color 0.15s, color 0.15s; }
+.docs-btn:hover { color:#e2e8f0; border-color:#60a5fa; }
 .filters { background:#151824; border-bottom:1px solid #2d3148; padding:14px 28px; display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
 .filter-group { display:flex; flex-direction:column; gap:5px; }
 .filter-group label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.4px; }
@@ -79,7 +81,10 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 <div id="loadingOverlay">Загрузка данных из Firestore…</div>
 <header>
   <h1>📊 WB Аналитика — Дашборд</h1>
-  <span id="updated"></span>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <span id="updated"></span>
+    <a href="docs.html" target="_blank" class="docs-btn">📖 Как считаются графики</a>
+  </div>
 </header>
 <div class="filters">
   <div class="filter-group">

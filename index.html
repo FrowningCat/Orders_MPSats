@@ -96,9 +96,9 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <input type="date" id="fDateTo">
   </div>
   <div class="filter-group">
-    <label>Подкатегории</label>
+    <label>Категории</label>
     <div class="multiselect" id="fItemWrap">
-      <button type="button" class="multiselect-btn" id="fItemBtn">Все подкатегории ▾</button>
+      <button type="button" class="multiselect-btn" id="fItemBtn">Все категории ▾</button>
       <div class="multiselect-panel" id="fItemPanel" style="display:none;">
         <div class="multiselect-actions">
           <button type="button" id="selectAllItemsBtn">Выбрать все</button>
@@ -129,8 +129,8 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <div class="stat-row">
       <div class="stat"><div class="stat-val" id="stat-o25">—</div><div class="stat-lbl">Заказов 2025</div></div>
       <div class="stat"><div class="stat-val" id="stat-o26">—</div><div class="stat-lbl">Заказов 2026</div></div>
-      <div class="stat" id="stat-our25-wrap" style="display:none;"><div class="stat-val" id="stat-our25" style="color:#1d4ed8;">—</div><div class="stat-lbl">Наши 2025</div></div>
-      <div class="stat" id="stat-our26-wrap" style="display:none;"><div class="stat-val" id="stat-our26" style="color:#be185d;">—</div><div class="stat-lbl">Наши 2026</div></div>
+      <div class="stat" id="stat-our25-wrap" style="display:none;"><div class="stat-val" id="stat-our25">—</div><div class="stat-lbl" style="color:#1d4ed8;">Наши 2025</div></div>
+      <div class="stat" id="stat-our26-wrap" style="display:none;"><div class="stat-val" id="stat-our26">—</div><div class="stat-lbl" style="color:#be185d;">Наши 2026</div></div>
     </div>
     <div class="chart-wrap"><canvas id="chartOrders"></canvas></div>
   </div>
@@ -268,7 +268,7 @@ function buildItemCheckboxList() {
 
 function updateItemButtonLabel() {
   const btn = document.getElementById('fItemBtn');
-  if (selectedItems.size === 0) btn.textContent = 'Все подкатегории ▾';
+  if (selectedItems.size === 0) btn.textContent = 'Все категории ▾';
   else if (selectedItems.size === 1) btn.textContent = [...selectedItems][0] + ' ▾';
   else btn.textContent = 'Выбрано: ' + selectedItems.size + ' ▾';
 }
@@ -453,7 +453,7 @@ function applyFilters() {
   if (ourOnly) {
     ordersDatasets.push(
       {label:'2025 (наши)',data:allW.map(w=>byYearOur[2025]?.[w]??null),borderColor:C.our25,backgroundColor:'transparent',borderDash:[],fill:false,tension:0.3,pointRadius:2,spanGaps:true},
-      {label:'2026 (наши)',data:allW.map(w=>byYearOur[2026]?.[w]??null),borderColor:C.our26,backgroundColor:'transparent',borderDash:[6,4],fill:false,tension:0.3,pointRadius:2,spanGaps:true},
+      {label:'2026 (наши)',data:allW.map(w=>byYearOur[2026]?.[w]??null),borderColor:C.our26,backgroundColor:'transparent',borderDash:[],fill:false,tension:0.3,pointRadius:2,spanGaps:true},
     );
   }
 
@@ -600,7 +600,7 @@ function applyFilters() {
     </tr>`;
   });
 
-  renderCategoryTrends(hfSource, selected, hasSearch ? 200 : 2000);
+  renderCategoryTrends(hfSource, effectiveOrderSubjects, hasSearch ? 200 : 2000);
   updateClickedDateBadge(dateFrom, dateTo);
 }
 

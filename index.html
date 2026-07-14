@@ -125,7 +125,7 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <ul class="trend-list" id="trendList"></ul>
   </div>
   <div class="card">
-    <h2>Заказы по неделям</h2>
+    <h2>Заказы по неделям<span id="ordersSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;"></span></h2>
     <div class="stat-row">
       <div class="stat"><div class="stat-val" id="stat-o25">—</div><div class="stat-lbl">Заказов 2025</div></div>
       <div class="stat"><div class="stat-val" id="stat-o26">—</div><div class="stat-lbl">Заказов 2026</div></div>
@@ -353,6 +353,48 @@ function applyFilters() {
     return selectedLower.some(sel => itemNameLower.includes(sel) || sel.includes(itemNameLower));
   }
 
+  const hasSearch = !!searchQuery;
+
+  // Категория WB (subject_name) не хранит текст запроса — но можно попытаться
+  // определить подходящую категорию по словам поискового запроса, сверяя их
+  // с известным списком subject_name. Считаем, сколько СЛОВ запроса содержится
+  // в каждом названии категории, и берём только категории с МАКСИМАЛЬНЫМ числом
+  // совпавших слов — иначе, например, запрос "женские костюмы" совпадёт сразу
+  // и с "Костюмы женские", и с "Костюмы мужские" (оба содержат слово "костюмы").
+  // Если WB сам разделяет категории по полу в названии — пол подхватится
+  // автоматически этим же механизмом; если нет — фильтр сработает только на
+  // уровне категории целиком, без пола.
+  function deriveSubjectsFromSearch(query) {
+    if (!query) return [];
+    const q = query.toLowerCase();
+    const words = q.split(/\s+/).filter(w => w.length > 2);
+    if (!words.length) return [];
+
+    const scored = DATA.order_subjects
+      .map(r => r.subject_name)
+      .map(subj => {
+        const s = subj.toLowerCase();
+        const score = words.reduce((acc, w) => acc + (s.includes(w) ? 1 : 0), 0);
+        return { subj, score };
+      })
+      .filter(x => x.score > 0);
+
+    if (!scored.length) return [];
+    const maxScore = Math.max(...scored.map(x => x.score));
+    return scored.filter(x => x.score === maxScore).map(x => x.subj);
+  }
+  const searchImpliedSubjects = hasSearch ? deriveSubjectsFromSearch(searchQuery) : [];
+
+  // Явно выбранные подкатегории всегда в приоритете. Если категория не выбрана
+  // вручную, но есть активный поиск — заказы фильтруются по категориям,
+  // подошедшим под поисковую фразу (см. deriveSubjectsFromSearch выше).
+  const effectiveOrderSubjects = selected.length ? selected : searchImpliedSubjects;
+
+  document.getElementById('ordersSubtitle').textContent =
+    (!selected.length && hasSearch && searchImpliedSubjects.length)
+      ? ` — по запросу «${searchQuery}» → категория: ${searchImpliedSubjects.join(', ')}`
+      : '';
+
   // Заказы по неделям YoY — точный фильтр по subject_name (реальная категория WB).
   // "Только наши артикулы" больше НЕ скрывает остальные данные — график всегда
   // показывает полный объём (2025/2026); при включённом чекбоксе поверх добавляются
@@ -360,7 +402,7 @@ function applyFilters() {
   const orders = DATA.orders_daily.filter(r => {
     if (dateFrom && r.order_date < dateFrom) return false;
     if (dateTo   && r.order_date > dateTo)   return false;
-    if (selected.length && !selected.includes(r.subject_name)) return false;
+    if (effectiveOrderSubjects.length && !effectiveOrderSubjects.includes(r.subject_name)) return false;
     return true;
   });
   const ordersOur = orders.filter(r => r.is_our === 1);
@@ -458,7 +500,6 @@ function applyFilters() {
   // Если активен поиск по запросу — оба графика ниже строятся по конкретным
   // запросам из topKws (те же, что видны в таблице «Топ-50»), а не по
   // агрегатам категории из kw_weekly, где текста запроса просто нет.
-  const hasSearch = !!searchQuery;
   const hfSource = hasSearch ? topKws : kws;
 
   const searchSubtitleText = hasSearch ? ` — по запросу «${searchQuery}»` : '';

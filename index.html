@@ -249,6 +249,21 @@ async function loadDashboard() {
 
 function initDashboard() {
 
+// Пол в заказах (WB_Product_Cards_Characteristics.charValue) и пол в MPStats
+// (mpstats_kw_dashboard.gender) — две разные таксономии, не похожие даже по
+// подстроке ("Женский" vs "женские" — ещё туда-сюда, но "Мальчики" vs "для
+// мальчиков" уже нет). Поэтому вместо угадывания — явный словарь соответствий.
+// "Детский" в WB не имеет аналога в MPStats — при выборе этого пола
+// MPStats-графики (частоты, топ-50, тренды) закономерно окажутся пустыми,
+// это не баг, а отсутствие данных на стороне MPStats.
+const GENDER_SYNONYMS = {
+  'Женский':   ['женские'],
+  'Мужской':   ['мужские'],
+  'Девочки':   ['для девочек'],
+  'Мальчики':  ['для мальчиков'],
+  'Детский':   [],
+};
+
 function fmtNum(n) {
   if(!n && n!==0) return '—';
   if(n>=1e6) return (n/1e6).toFixed(1)+'М';
@@ -458,7 +473,6 @@ function applyFilters() {
   const selected = [...selectedItems];               // выбранные подкатегории (может быть несколько)
   const selectedLower = selected.map(s => s.toLowerCase());
   const selectedGendersArr = [...selectedGenders];   // выбранный пол (может быть несколько значений)
-  const selectedGendersLower = selectedGendersArr.map(s => s.toLowerCase());
   const searchQuery = document.getElementById('fSearch').value.trim().toLowerCase();
   const ourOnly = document.getElementById('fOurOnly').checked;
 
@@ -469,13 +483,18 @@ function applyFilters() {
   }
 
   // Для MPStats-данных (kw_weekly/top_keywords) пол — своя таксономия
-  // (mpstats_kw_dashboard.gender), может не совпадать дословно с charValue
-  // из WB_Product_Cards_Characteristics — поэтому сравниваем нечётко,
-  // как и с категориями. Для заказов (orders_daily.gender) сравнение точное —
-  // см. ниже, там пол взят из той же самой таблицы, что и список fGenderList.
-  function matchesSelectedGenders(genderLower) {
-    if (!selectedGendersLower.length) return true;
-    return selectedGendersLower.some(sel => genderLower.includes(sel) || sel.includes(genderLower));
+  // (mpstats_kw_dashboard.gender), не похожая даже по подстроке на
+  // charValue из WB_Product_Cards_Characteristics — сравниваем через явный
+  // словарь GENDER_SYNONYMS (см. выше), а не угадыванием. Для заказов
+  // (orders_daily.gender) сравнение точное — см. ниже, там пол взят из той
+  // же самой таблицы, что и список fGenderList.
+  function matchesSelectedGenders(genderRaw) {
+    if (!selectedGendersArr.length) return true;
+    const genderLower = (genderRaw || '').toLowerCase().trim();
+    return selectedGendersArr.some(sel => {
+      const synonyms = GENDER_SYNONYMS[sel] || [];
+      return synonyms.some(syn => syn.toLowerCase() === genderLower);
+    });
   }
 
   const hasSearch = !!searchQuery;
@@ -626,7 +645,7 @@ function applyFilters() {
     (!dateTo   || r.d1 <= dateTo)   &&
     (!dateFrom || r.d2 >= dateFrom) &&
     matchesSelectedItems(r.item_name.toLowerCase()) &&
-    matchesSelectedGenders((r.gender || '').toLowerCase())
+    matchesSelectedGenders(r.gender)
   );
 
   // Топ-50 ключевиков — приблизительное сопоставление с subject_name + поиск по тексту запроса
@@ -634,7 +653,7 @@ function applyFilters() {
     (!dateTo   || r.d1 <= dateTo)   &&
     (!dateFrom || r.d2 >= dateFrom) &&
     matchesSelectedItems(r.item_name.toLowerCase()) &&
-    matchesSelectedGenders((r.gender || '').toLowerCase()) &&
+    matchesSelectedGenders(r.gender) &&
     (!searchQuery || r.keyword.toLowerCase().includes(searchQuery))
   );
 

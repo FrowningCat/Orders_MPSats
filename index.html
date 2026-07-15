@@ -131,6 +131,19 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <input type="text" id="fSearch" placeholder="например: шорты женские летние">
   </div>
   <div class="filter-group">
+    <label>Месяц</label>
+    <div class="multiselect" id="fMonthWrap">
+      <button type="button" class="multiselect-btn" id="fMonthBtn">Все месяцы ▾</button>
+      <div class="multiselect-panel" id="fMonthPanel" style="display:none;">
+        <div class="multiselect-actions">
+          <button type="button" id="selectAllMonthsBtn">Выбрать все</button>
+          <button type="button" id="clearAllMonthsBtn">Очистить</button>
+        </div>
+        <div class="multiselect-list" id="fMonthList"></div>
+      </div>
+    </div>
+  </div>
+  <div class="filter-group">
     <label class="spacer">.</label>
     <label class="checkbox-filter"><input type="checkbox" id="fOurOnly"> Наши артикулы</label>
   </div>
@@ -335,6 +348,9 @@ document.addEventListener('click', function(e){
   const genderWrap = document.getElementById('fGenderWrap');
   const genderPanel = document.getElementById('fGenderPanel');
   if (genderWrap && genderPanel && !genderWrap.contains(e.target)) genderPanel.style.display = 'none';
+  const monthWrap = document.getElementById('fMonthWrap');
+  const monthPanel = document.getElementById('fMonthPanel');
+  if (monthWrap && monthPanel && !monthWrap.contains(e.target)) monthPanel.style.display = 'none';
 });
 
 function selectAllItems() {
@@ -414,6 +430,67 @@ function clearAllGenders() {
 buildGenderCheckboxList();
 updateGenderButtonLabel();
 
+// Месяц — тот же мультиселект-паттерн, но список фиксированный (12 месяцев),
+// не тянется из базы. Значение чекбокса — номер месяца (1-12, строкой),
+// сравнивается с месяцем даты (order_date/d1) независимо от года — то есть
+// можно выбрать, например, только июнь или май+август сразу за все годы.
+const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+let selectedMonths = new Set();
+
+function buildMonthCheckboxList() {
+  const listEl = document.getElementById('fMonthList');
+  listEl.innerHTML = '';
+  MONTH_NAMES.forEach((name, idx) => {
+    const monthNum = String(idx + 1);
+    const label = document.createElement('label');
+    label.className = 'multiselect-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = monthNum;
+    cb.addEventListener('change', function(){
+      if (cb.checked) selectedMonths.add(cb.value); else selectedMonths.delete(cb.value);
+      updateMonthButtonLabel();
+      applyFilters();
+    });
+    const span = document.createElement('span');
+    span.textContent = name;
+    label.appendChild(cb);
+    label.appendChild(span);
+    listEl.appendChild(label);
+  });
+}
+
+function updateMonthButtonLabel() {
+  const btn = document.getElementById('fMonthBtn');
+  if (selectedMonths.size === 0) btn.textContent = 'Все месяцы ▾';
+  else if (selectedMonths.size === 1) btn.textContent = MONTH_NAMES[Number([...selectedMonths][0]) - 1] + ' ▾';
+  else btn.textContent = 'Выбрано: ' + selectedMonths.size + ' ▾';
+}
+
+function toggleMonthDropdown() {
+  const panel = document.getElementById('fMonthPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function selectAllMonths() {
+  document.querySelectorAll('#fMonthList input[type=checkbox]').forEach(cb => {
+    cb.checked = true;
+    selectedMonths.add(cb.value);
+  });
+  updateMonthButtonLabel();
+  applyFilters();
+}
+
+function clearAllMonths() {
+  document.querySelectorAll('#fMonthList input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  selectedMonths.clear();
+  updateMonthButtonLabel();
+  applyFilters();
+}
+
+buildMonthCheckboxList();
+updateMonthButtonLabel();
+
 // Поиск по запросу, "наши артикулы" и период — живой фильтр без кнопки "Применить"
 document.getElementById('fSearch').addEventListener('input', () => applyFilters());
 document.getElementById('fOurOnly').addEventListener('change', () => applyFilters());
@@ -429,6 +506,9 @@ document.getElementById('clearAllItemsBtn').addEventListener('click', clearAllIt
 document.getElementById('fGenderBtn').addEventListener('click', toggleGenderDropdown);
 document.getElementById('selectAllGendersBtn').addEventListener('click', selectAllGenders);
 document.getElementById('clearAllGendersBtn').addEventListener('click', clearAllGenders);
+document.getElementById('fMonthBtn').addEventListener('click', toggleMonthDropdown);
+document.getElementById('selectAllMonthsBtn').addEventListener('click', selectAllMonths);
+document.getElementById('clearAllMonthsBtn').addEventListener('click', clearAllMonths);
 document.getElementById('btnReset').addEventListener('click', resetFilters);
 
 document.getElementById('exportTrendsBtn').addEventListener('click', () =>
@@ -497,6 +577,16 @@ function applyFilters() {
     });
   }
 
+  // Месяц — независимо от года: "2025-06-15" и "2026-06-02" оба считаются
+  // июнем. dateStr — любая дата вида "YYYY-MM-DD" (order_date или d1/d2).
+  const selectedMonthsArr = [...selectedMonths];
+  function matchesSelectedMonths(dateStr) {
+    if (!selectedMonthsArr.length) return true;
+    if (!dateStr || dateStr.length < 7) return false;
+    const monthNum = String(parseInt(dateStr.slice(5, 7), 10));
+    return selectedMonthsArr.includes(monthNum);
+  }
+
   const hasSearch = !!searchQuery;
 
   // Категория WB (subject_name) не хранит текст запроса — но можно попытаться
@@ -548,6 +638,7 @@ function applyFilters() {
     if (dateTo   && r.order_date > dateTo)   return false;
     if (effectiveOrderSubjects.length && !effectiveOrderSubjects.includes(r.subject_name)) return false;
     if (selectedGendersArr.length && !selectedGendersArr.includes(r.gender)) return false;
+    if (!matchesSelectedMonths(r.order_date)) return false;
     return true;
   });
   const ordersOur = orders.filter(r => r.is_our === 1);
@@ -645,7 +736,8 @@ function applyFilters() {
     (!dateTo   || r.d1 <= dateTo)   &&
     (!dateFrom || r.d2 >= dateFrom) &&
     matchesSelectedItems(r.item_name.toLowerCase()) &&
-    matchesSelectedGenders(r.gender)
+    matchesSelectedGenders(r.gender) &&
+    matchesSelectedMonths(r.d1)
   );
 
   // Топ-50 ключевиков — приблизительное сопоставление с subject_name + поиск по тексту запроса
@@ -654,6 +746,7 @@ function applyFilters() {
     (!dateFrom || r.d2 >= dateFrom) &&
     matchesSelectedItems(r.item_name.toLowerCase()) &&
     matchesSelectedGenders(r.gender) &&
+    matchesSelectedMonths(r.d1) &&
     (!searchQuery || r.keyword.toLowerCase().includes(searchQuery))
   );
 
@@ -797,6 +890,7 @@ function resetFilters() {
   document.getElementById('fDateTo').value   = maxDate;
   clearAllItems();
   clearAllGenders();
+  clearAllMonths();
   document.getElementById('fSearch').value = '';
   document.getElementById('fOurOnly').checked = false;
   applyFilters();

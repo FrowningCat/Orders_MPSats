@@ -41,6 +41,14 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 .kw-table th { text-align:left; color:#64748b; font-weight:500; padding:6px 10px; border-bottom:1px solid #2d3148; position:sticky; top:0; background:#1a1d27; }
 .kw-table td { padding:6px 10px; border-bottom:1px solid #1e2235; }
 .kw-table tr:hover td { background:#212436; }
+.kw-columns { display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; }
+.kw-column-title { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px; padding-bottom:8px; border-bottom:2px solid; }
+.kw-column-hf { color:#f472b6; border-color:#f472b6; }
+.kw-column-mf { color:#4ade80; border-color:#4ade80; }
+.kw-column-lf { color:#fbbf24; border-color:#fbbf24; }
+@media (max-width:1200px) {
+  .kw-columns { grid-template-columns:1fr; }
+}
 .badge { display:inline-block; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600; }
 .badge-hf { background:#1e3a5f; color:#60a5fa; }
 .badge-mf { background:#1a3a2a; color:#4ade80; }
@@ -176,13 +184,36 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <h2><span class="h2-text">Динамика частоты запросов MPStats<span id="kwSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span></span><button type="button" class="export-btn" id="exportKwBtn">⬇ Excel</button></h2>
     <div class="chart-wrap"><canvas id="chartKw"></canvas></div>
   </div>
-  <div class="card">
+  <div class="card full">
     <h2><span class="h2-text">Топ-50 ключевых запросов MPStats</span><button type="button" class="export-btn" id="exportTopBtn">⬇ Excel</button></h2>
-    <div style="overflow-y:auto;max-height:340px;">
-      <table class="kw-table">
-        <thead><tr><th>#</th><th>Запрос</th><th>Частота</th><th>WB</th><th>Тип</th><th>Категория</th></tr></thead>
-        <tbody id="kwTable"></tbody>
-      </table>
+    <div class="kw-columns">
+      <div class="kw-column">
+        <h3 class="kw-column-title kw-column-hf">ВЧ — высокочастотные</h3>
+        <div style="overflow-y:auto;max-height:420px;">
+          <table class="kw-table">
+            <thead><tr><th>#</th><th>Запрос</th><th>Частота</th><th>WB</th><th>Категория</th></tr></thead>
+            <tbody id="kwTableHF"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="kw-column">
+        <h3 class="kw-column-title kw-column-mf">СЧ — среднечастотные</h3>
+        <div style="overflow-y:auto;max-height:420px;">
+          <table class="kw-table">
+            <thead><tr><th>#</th><th>Запрос</th><th>Частота</th><th>WB</th><th>Категория</th></tr></thead>
+            <tbody id="kwTableMF"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="kw-column">
+        <h3 class="kw-column-title kw-column-lf">НЧ — низкочастотные</h3>
+        <div style="overflow-y:auto;max-height:420px;">
+          <table class="kw-table">
+            <thead><tr><th>#</th><th>Запрос</th><th>Частота</th><th>WB</th><th>Категория</th></tr></thead>
+            <tbody id="kwTableLF"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -885,14 +916,17 @@ function applyFilters() {
   document.getElementById('stat-hf25').textContent = fmtNum(sumHf(2025));
   document.getElementById('stat-hf26').textContent = fmtNum(sumHf(2026));
 
-  // Динамика частоты по неделям: без поиска — разбивка ВЧ/СЧ/НЧ по категории (kw_weekly);
-  // с поиском — top_keywords содержит только ВЧ-классифицированные запросы по своей природе
-  // (так же, как таблица «Топ-50»), поэтому показываем одну линию — сумму совпавших запросов.
+  // Динамика частоты по неделям — разбивка ВЧ/СЧ/НЧ. Раньше при активном поиске
+  // top_keywords содержал только ВЧ-запросы (SQL их отфильтровывал), поэтому
+  // приходилось показывать одну общую линию. Теперь SQL отдаёт все три типа,
+  // так что разбивка ВЧ/СЧ/НЧ работает одинаково что с поиском, что без.
   const kwByWeek = {};
   if (hasSearch) {
     for (const r of topKws) {
       if (!kwByWeek[r.d1]) kwByWeek[r.d1] = { hf:0, mf:0, lf:0 };
-      kwByWeek[r.d1].hf += r.total_freq;
+      if (r.freq_type && r.freq_type.startsWith('ВЧ')) kwByWeek[r.d1].hf += r.total_freq;
+      else if (r.freq_type && r.freq_type.startsWith('СЧ')) kwByWeek[r.d1].mf += r.total_freq;
+      else if (r.freq_type && r.freq_type.startsWith('НЧ')) kwByWeek[r.d1].lf += r.total_freq;
     }
   } else {
     for (const r of kws) {
@@ -913,9 +947,7 @@ function applyFilters() {
 
   chartKw.data = {
     labels: kwLabels.map(l=>l.slice(0,10)),
-    datasets: hasSearch ? [
-      {label:'Совпадения по запросу',data:kwLabels.map(l=>kwByWeek[l]?.hf??null),borderColor:C.hf,backgroundColor:'rgba(244,114,182,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
-    ] : [
+    datasets: [
       {label:'ВЧ',data:kwLabels.map(l=>kwByWeek[l]?.hf??null),borderColor:C.hf,backgroundColor:'rgba(244,114,182,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
       {label:'СЧ',data:kwLabels.map(l=>kwByWeek[l]?.mf??null),borderColor:C.mf,backgroundColor:'rgba(74,222,128,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
       {label:'НЧ',data:kwLabels.map(l=>kwByWeek[l]?.lf??null),borderColor:C.lf,backgroundColor:'rgba(251,191,36,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
@@ -923,27 +955,32 @@ function applyFilters() {
   };
   chartKw.update();
 
-  EXPORT_DATA.kw = kwLabels.map(l => {
-    const row = { 'Неделя': l };
-    if (hasSearch) {
-      row['Совпадения по запросу'] = kwByWeek[l]?.hf ?? '';
-    } else {
-      row['ВЧ'] = kwByWeek[l]?.hf ?? '';
-      row['СЧ'] = kwByWeek[l]?.mf ?? '';
-      row['НЧ'] = kwByWeek[l]?.lf ?? '';
+  EXPORT_DATA.kw = kwLabels.map(l => ({
+    'Неделя': l,
+    'ВЧ': kwByWeek[l]?.hf ?? '',
+    'СЧ': kwByWeek[l]?.mf ?? '',
+    'НЧ': kwByWeek[l]?.lf ?? '',
+  }));
+
+  // Группируем отдельно по каждому типу частотности — раньше здесь были
+  // только ВЧ-запросы (SQL их отфильтровывал), теперь СЧ/ВЧ/НЧ есть все,
+  // и показываем их тремя отдельными колонками, а не одним общим списком.
+  function aggregateByType(rows, typePrefix) {
+    const agg = {};
+    for (const r of rows) {
+      if (!r.freq_type || !r.freq_type.startsWith(typePrefix)) continue;
+      if (!agg[r.keyword]) agg[r.keyword] = {keyword:r.keyword, freq:0, wb:0, freq_type:r.freq_type, gender:r.gender, item_name:r.item_name};
+      agg[r.keyword].freq += r.total_freq;
+      agg[r.keyword].wb   += r.total_wb;
     }
-    return row;
-  });
-
-  const agg = {};
-  for(const r of topKws) {
-    if(!agg[r.keyword]) agg[r.keyword]={keyword:r.keyword,freq:0,wb:0,freq_type:r.freq_type,gender:r.gender,item_name:r.item_name};
-    agg[r.keyword].freq += r.total_freq;
-    agg[r.keyword].wb   += r.total_wb;
+    return Object.values(agg).sort((a,b)=>b.freq-a.freq).slice(0,50);
   }
-  const top = Object.values(agg).sort((a,b)=>b.freq-a.freq).slice(0,50);
 
-  EXPORT_DATA.topKeywords = top.map((r, i) => ({
+  const topHF = aggregateByType(topKws, 'ВЧ');
+  const topMF = aggregateByType(topKws, 'СЧ');
+  const topLF = aggregateByType(topKws, 'НЧ');
+
+  EXPORT_DATA.topKeywords = [...topHF, ...topMF, ...topLF].map((r, i) => ({
     '№': i + 1,
     'Запрос': r.keyword,
     'Частота': r.freq,
@@ -952,21 +989,29 @@ function applyFilters() {
     'Пол': r.gender,
     'Категория': r.item_name,
   }));
-  const maxF = top[0]?.freq||1;
-  const tbody = document.getElementById('kwTable');
-  tbody.innerHTML='';
-  top.forEach((r,i)=>{
-    const bc=r.freq_type.startsWith('ВЧ')?'badge-hf':r.freq_type.startsWith('СЧ')?'badge-mf':'badge-lf';
-    const bw=Math.round((r.freq/maxF)*100);
-    tbody.innerHTML+=`<tr>
-      <td style="color:#64748b">${i+1}</td>
-      <td>${r.keyword}</td>
-      <td><div class="freq-bar-wrap"><div class="freq-bar" style="width:${bw}px"></div><span>${fmtNum(r.freq)}</span></div></td>
-      <td style="color:#64748b">${fmtNum(r.wb)}</td>
-      <td><span class="badge ${bc}">${r.freq_type.split(' ')[0]}</span></td>
-      <td style="color:#64748b;font-size:12px">${r.gender} / ${r.item_name}</td>
-    </tr>`;
-  });
+
+  function renderKwColumn(tbodyId, rows) {
+    const tbody = document.getElementById(tbodyId);
+    tbody.innerHTML = '';
+    const maxF = rows[0]?.freq || 1;
+    rows.forEach((r, i) => {
+      const bw = Math.round((r.freq / maxF) * 100);
+      tbody.innerHTML += `<tr>
+        <td style="color:#64748b">${i+1}</td>
+        <td>${r.keyword}</td>
+        <td><div class="freq-bar-wrap"><div class="freq-bar" style="width:${bw}px"></div><span>${fmtNum(r.freq)}</span></div></td>
+        <td style="color:#64748b">${fmtNum(r.wb)}</td>
+        <td style="color:#64748b;font-size:12px">${r.gender} / ${r.item_name}</td>
+      </tr>`;
+    });
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;font-style:italic;text-align:center;padding:16px;">Нет данных</td></tr>';
+    }
+  }
+
+  renderKwColumn('kwTableHF', topHF);
+  renderKwColumn('kwTableMF', topMF);
+  renderKwColumn('kwTableLF', topLF);
 
   renderCategoryTrends(hfSource, effectiveOrderSubjects, hasSearch ? 200 : 2000);
   updateClickedDateBadge(dateFrom, dateTo);

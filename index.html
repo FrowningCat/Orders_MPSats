@@ -163,7 +163,7 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <ul class="trend-list" id="trendList"></ul>
   </div>
   <div class="card">
-    <h2><span class="h2-text">Заказы по неделям<span id="ordersSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;"></span></span><button type="button" class="export-btn" id="exportOrdersBtn">⬇ Excel</button></h2>
+    <h2><span class="h2-text">Заказы по неделям<span id="ordersGranularity" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;"></span><span id="ordersSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;"></span></span><button type="button" class="export-btn" id="exportOrdersBtn">⬇ Excel</button></h2>
     <div class="stat-row">
       <div class="stat"><div class="stat-val" id="stat-o25">—</div><div class="stat-lbl">Заказов 2025</div></div>
       <div class="stat"><div class="stat-val" id="stat-o26">—</div><div class="stat-lbl">Заказов 2026</div></div>
@@ -519,6 +519,20 @@ function clearAllMonths() {
   applyFilters();
 }
 
+// Клик по точке-месяцу на графике (когда фильтр по месяцу ещё не выбран) —
+// выбирает именно этот месяц в фильтре, график переключается на понедельную
+// разбивку внутри этого месяца.
+function selectSingleMonth(monthNum) {
+  const monthStr = String(monthNum);
+  document.querySelectorAll('#fMonthList input[type=checkbox]').forEach(cb => {
+    cb.checked = (cb.value === monthStr);
+  });
+  selectedMonths.clear();
+  selectedMonths.add(monthStr);
+  updateMonthButtonLabel();
+  applyFilters();
+}
+
 buildMonthCheckboxList();
 updateMonthButtonLabel();
 
@@ -564,10 +578,20 @@ const chartOrders  = new Chart(document.getElementById('chartOrders'),  {type:'l
 const chartHfYoy = new Chart(document.getElementById('chartHfYoy'), {type:'line',data:{labels:[],datasets:[]},options:JSON.parse(JSON.stringify(OPT))});
 const chartKw      = new Chart(document.getElementById('chartKw'),      {type:'line',data:{labels:[],datasets:[]},options:JSON.parse(JSON.stringify(OPT))});
 
-// Клик по точке любого графика — фильтрует все блоки только по этой дате
+// Клик по точке любого графика:
+// - в режиме "по месяцам" (фильтр Месяц пуст) — выбирает кликнутый месяц
+//   в фильтре, график переключается на понедельную разбивку внутри него;
+// - в режиме "по неделям" (месяц уже выбран) — как раньше, сужает период
+//   до конкретной недели.
 function onChartPointClick(evt, elements, chart) {
   if (!elements.length) return;
   const idx = elements[0].index;
+  if (chart._monthMode) {
+    const monthNum = chart._axisMonths ? chart._axisMonths[idx] : null;
+    if (!monthNum) return;
+    selectSingleMonth(monthNum);
+    return;
+  }
   const label = chart.data.labels[idx];
   if (!label) return;
   document.getElementById('fDateFrom').value = label;
@@ -617,6 +641,12 @@ function applyFilters() {
     const monthNum = String(parseInt(dateStr.slice(5, 7), 10));
     return selectedMonthsArr.includes(monthNum);
   }
+
+  // Если ни один месяц не выбран — графики показывают данные по месяцам
+  // (крупная картина). Если выбран один или несколько месяцев — переключаются
+  // на понедельную разбивку внутри выбранных месяцев (детальный разбор).
+  const monthMode = selectedMonthsArr.length === 0;
+  const granularitySuffix = monthMode ? ' — по месяцам' : ' — по неделям';
 
   const hasSearch = !!searchQuery;
 
@@ -736,6 +766,29 @@ function applyFilters() {
     return seq;
   }
 
+  // То же самое, но по месяцам (для хронологического графика "Динамика
+  // частоты запросов MPStats" в режиме "по месяцам", когда фильтр по
+  // конкретному месяцу не выбран).
+  function nextMonth(year, month) {
+    if (month >= 12) return { year: year + 1, month: 1 };
+    return { year, month: month + 1 };
+  }
+  function buildChronoMonthSeq(yearMonthPairs) {
+    if (!yearMonthPairs.length) return [];
+    const sorted = [...yearMonthPairs].sort((a, b) => a.year - b.year || a.month - b.month);
+    const start = sorted[0], end = sorted[sorted.length - 1];
+    const seq = [];
+    let cur = { year: start.year, month: start.month };
+    let guard = 0;
+    while (guard < 60) {
+      seq.push({ ...cur });
+      if (cur.year === end.year && cur.month === end.month) break;
+      cur = nextMonth(cur.year, cur.month);
+      guard++;
+    }
+    return seq;
+  }
+
   // Непрерывная последовательность дат с шагом в stepDays — не используется
   // сейчас (chartKw строит ось по реальным датам d1, см. ниже), оставлено
   // на случай если понадобится синтетическая равномерная сетto для другого
@@ -752,22 +805,10 @@ function applyFilters() {
     return seq;
   }
 
-  const byYear = {};
-  const weekStartByYear = { 2025: {}, 2026: {} };
-  for(const r of orders) {
-    const { isoYear: y, week: w } = getISOWeekInfo(r.order_date);
-    if (y !== 2025 && y !== 2026) continue; // отсекаем случайные соседние ISO-годы
-    if(!byYear[y]) byYear[y]={};
-    byYear[y][w] = { o:(byYear[y][w]?.o||0)+r.orders_cnt, r:(byYear[y][w]?.r||0)+r.revenue };
-    if(!weekStartByYear[y][w] || r.order_date < weekStartByYear[y][w]) {
-      weekStartByYear[y][w] = r.order_date;
-    }
-  }
-
-  // Диапазон недель считаем БЕЗ фильтра по месяцу (те же условия, что и у
-  // orders выше, кроме matchesSelectedMonths) — иначе исключённые месяцы
-  // просто выпадали бы из оси, и Chart.js рисовал бы линию напролом через
-  // дыру, будто ничего не отфильтровано.
+  // Диапазон считаем БЕЗ фильтра по месяцу (те же условия, что и у orders
+  // выше, кроме matchesSelectedMonths) — иначе исключённые месяцы просто
+  // выпадали бы из оси, и Chart.js рисовал бы линию напролом через дыру,
+  // будто ничего не отфильтровано. Используется в обеих ветках ниже.
   const ordersForRange = DATA.orders_daily.filter(r => {
     if (dateFrom && r.order_date < dateFrom) return false;
     if (dateTo   && r.order_date > dateTo)   return false;
@@ -775,70 +816,162 @@ function applyFilters() {
     if (selectedGendersArr.length && !selectedGendersArr.includes(r.gender)) return false;
     return true;
   });
-  const rangeWeeks = [];
-  for (const r of ordersForRange) {
-    const { isoYear: y, week: w } = getISOWeekInfo(r.order_date);
-    if (y === 2025 || y === 2026) rangeWeeks.push(w);
-  }
-  const w25  = Object.keys(byYear[2025]||{}).map(Number).sort((a,b)=>a-b);
-  const w26  = Object.keys(byYear[2026]||{}).map(Number).sort((a,b)=>a-b);
-  let allW;
-  if (rangeWeeks.length) {
-    const minW = Math.min(...rangeWeeks), maxW = Math.max(...rangeWeeks);
-    allW = [];
-    for (let w = minW; w <= maxW; w++) allW.push(w);
-  } else {
-    allW = [...new Set([...w25,...w26])].sort((a,b)=>a-b);
-  }
-  const labelRefYear = w26.length ? 2026 : 2025;
-  const labels = allW.map(w => (weekStartByYear[2026][w] || weekStartByYear[2025][w] || isoWeekMonday(labelRefYear, w)).slice(0,10));
 
-  // "Наши" — та же недельная разбивка, но только по строкам is_our=1.
-  // Выравниваем по тем же неделям (allW), что и общий график, чтобы линии совпадали по оси X.
-  const byYearOur = {};
-  for (const r of ordersOur) {
-    const { isoYear: y, week: w } = getISOWeekInfo(r.order_date);
-    if (y !== 2025 && y !== 2026) continue;
-    if (!byYearOur[y]) byYearOur[y] = {};
-    byYearOur[y][w] = (byYearOur[y][w] || 0) + r.orders_cnt;
-  }
+  let ordersAxisMonths = null; // заполняется только в monthMode, для клика по точке
 
-  const ordersDatasets = [
-    {label:'2025',data:allW.map(w=>byYear[2025]?.[w]?.o??null),borderColor:C.y25,backgroundColor:C.y25bg,fill:true,tension:0.3,pointRadius:3,spanGaps:false},
-    {label:'2026',data:allW.map(w=>byYear[2026]?.[w]?.o??null),borderColor:C.y26,backgroundColor:C.y26bg,fill:true,tension:0.3,pointRadius:3,spanGaps:false},
-  ];
-  if (ourOnly) {
-    ordersDatasets.push(
-      {label:'2025 (наши)',data:allW.map(w=>byYearOur[2025]?.[w]??null),borderColor:C.our25,backgroundColor:'transparent',borderDash:[],fill:false,tension:0.3,pointRadius:2,spanGaps:false},
-      {label:'2026 (наши)',data:allW.map(w=>byYearOur[2026]?.[w]??null),borderColor:C.our26,backgroundColor:'transparent',borderDash:[],fill:false,tension:0.3,pointRadius:2,spanGaps:false},
-    );
-  }
-
-  chartOrders.data = { labels, datasets: ordersDatasets };
-  chartOrders.options.plugins.tooltip.callbacks = {
-    ...chartOrders.options.plugins.tooltip.callbacks,
-    title: (items) => {
-      if (!items.length) return '';
-      const it = items[0];
-      const y = it.dataset.label; // '2025' или '2026'
-      const w = allW[it.dataIndex];
-      return (weekStartByYear[y]?.[w] || labels[it.dataIndex] || '').slice(0,10);
+  if (monthMode) {
+    // Режим "по месяцам" — крупная картина, ничего не выбрано в фильтре Месяц.
+    const byMonth = {};
+    for (const r of orders) {
+      const y = parseInt(r.order_date.slice(0,4), 10);
+      const m = parseInt(r.order_date.slice(5,7), 10);
+      if (y !== 2025 && y !== 2026) continue;
+      if (!byMonth[y]) byMonth[y] = {};
+      if (!byMonth[y][m]) byMonth[y][m] = { o:0, r:0 };
+      byMonth[y][m].o += r.orders_cnt;
+      byMonth[y][m].r += r.revenue;
     }
-  };
+    const monthsInRange = [];
+    for (const r of ordersForRange) {
+      const y = parseInt(r.order_date.slice(0,4), 10);
+      const m = parseInt(r.order_date.slice(5,7), 10);
+      if (y === 2025 || y === 2026) monthsInRange.push(m);
+    }
+    let allM;
+    if (monthsInRange.length) {
+      const minM = Math.min(...monthsInRange), maxM = Math.max(...monthsInRange);
+      allM = [];
+      for (let m = minM; m <= maxM; m++) allM.push(m);
+    } else {
+      allM = [1,2,3,4,5,6,7,8,9,10,11,12];
+    }
+    const monthLabels = allM.map(m => MONTH_NAMES[m-1]);
+    ordersAxisMonths = allM;
+
+    const byMonthOur = {};
+    for (const r of ordersOur) {
+      const y = parseInt(r.order_date.slice(0,4), 10);
+      const m = parseInt(r.order_date.slice(5,7), 10);
+      if (y !== 2025 && y !== 2026) continue;
+      if (!byMonthOur[y]) byMonthOur[y] = {};
+      byMonthOur[y][m] = (byMonthOur[y][m] || 0) + r.orders_cnt;
+    }
+
+    const ordersDatasets = [
+      {label:'2025',data:allM.map(m=>byMonth[2025]?.[m]?.o??null),borderColor:C.y25,backgroundColor:C.y25bg,fill:true,tension:0.3,pointRadius:4,spanGaps:false},
+      {label:'2026',data:allM.map(m=>byMonth[2026]?.[m]?.o??null),borderColor:C.y26,backgroundColor:C.y26bg,fill:true,tension:0.3,pointRadius:4,spanGaps:false},
+    ];
+    if (ourOnly) {
+      ordersDatasets.push(
+        {label:'2025 (наши)',data:allM.map(m=>byMonthOur[2025]?.[m]??null),borderColor:C.our25,backgroundColor:'transparent',borderDash:[],fill:false,tension:0.3,pointRadius:3,spanGaps:false},
+        {label:'2026 (наши)',data:allM.map(m=>byMonthOur[2026]?.[m]??null),borderColor:C.our26,backgroundColor:'transparent',borderDash:[],fill:false,tension:0.3,pointRadius:3,spanGaps:false},
+      );
+    }
+
+    chartOrders.data = { labels: monthLabels, datasets: ordersDatasets };
+    chartOrders.options.plugins.tooltip.callbacks = {
+      ...chartOrders.options.plugins.tooltip.callbacks,
+      title: (items) => items.length ? (monthLabels[items[0].dataIndex] || '') : '',
+    };
+
+    EXPORT_DATA.orders = allM.map((m, i) => {
+      const row = {
+        'Месяц': monthLabels[i],
+        'Заказы 2025': byMonth[2025]?.[m]?.o ?? '',
+        'Заказы 2026': byMonth[2026]?.[m]?.o ?? '',
+      };
+      if (ourOnly) {
+        row['Наши 2025'] = byMonthOur[2025]?.[m] ?? '';
+        row['Наши 2026'] = byMonthOur[2026]?.[m] ?? '';
+      }
+      return row;
+    });
+  } else {
+    // Режим "по неделям" — выбран один или несколько месяцев в фильтре,
+    // детальный разбор внутри них (та же логика непрерывной ISO-недельной
+    // оси, что была всегда).
+    const byYear = {};
+    const weekStartByYear = { 2025: {}, 2026: {} };
+    for(const r of orders) {
+      const { isoYear: y, week: w } = getISOWeekInfo(r.order_date);
+      if (y !== 2025 && y !== 2026) continue; // отсекаем случайные соседние ISO-годы
+      if(!byYear[y]) byYear[y]={};
+      byYear[y][w] = { o:(byYear[y][w]?.o||0)+r.orders_cnt, r:(byYear[y][w]?.r||0)+r.revenue };
+      if(!weekStartByYear[y][w] || r.order_date < weekStartByYear[y][w]) {
+        weekStartByYear[y][w] = r.order_date;
+      }
+    }
+
+    const rangeWeeks = [];
+    for (const r of ordersForRange) {
+      const { isoYear: y, week: w } = getISOWeekInfo(r.order_date);
+      if (y === 2025 || y === 2026) rangeWeeks.push(w);
+    }
+    const w25  = Object.keys(byYear[2025]||{}).map(Number).sort((a,b)=>a-b);
+    const w26  = Object.keys(byYear[2026]||{}).map(Number).sort((a,b)=>a-b);
+    let allW;
+    if (rangeWeeks.length) {
+      const minW = Math.min(...rangeWeeks), maxW = Math.max(...rangeWeeks);
+      allW = [];
+      for (let w = minW; w <= maxW; w++) allW.push(w);
+    } else {
+      allW = [...new Set([...w25,...w26])].sort((a,b)=>a-b);
+    }
+    const labelRefYear = w26.length ? 2026 : 2025;
+    const labels = allW.map(w => (weekStartByYear[2026][w] || weekStartByYear[2025][w] || isoWeekMonday(labelRefYear, w)).slice(0,10));
+
+    // "Наши" — та же недельная разбивка, но только по строкам is_our=1.
+    // Выравниваем по тем же неделям (allW), что и общий график, чтобы линии совпадали по оси X.
+    const byYearOur = {};
+    for (const r of ordersOur) {
+      const { isoYear: y, week: w } = getISOWeekInfo(r.order_date);
+      if (y !== 2025 && y !== 2026) continue;
+      if (!byYearOur[y]) byYearOur[y] = {};
+      byYearOur[y][w] = (byYearOur[y][w] || 0) + r.orders_cnt;
+    }
+
+    const ordersDatasets = [
+      {label:'2025',data:allW.map(w=>byYear[2025]?.[w]?.o??null),borderColor:C.y25,backgroundColor:C.y25bg,fill:true,tension:0.3,pointRadius:3,spanGaps:false},
+      {label:'2026',data:allW.map(w=>byYear[2026]?.[w]?.o??null),borderColor:C.y26,backgroundColor:C.y26bg,fill:true,tension:0.3,pointRadius:3,spanGaps:false},
+    ];
+    if (ourOnly) {
+      ordersDatasets.push(
+        {label:'2025 (наши)',data:allW.map(w=>byYearOur[2025]?.[w]??null),borderColor:C.our25,backgroundColor:'transparent',borderDash:[],fill:false,tension:0.3,pointRadius:2,spanGaps:false},
+        {label:'2026 (наши)',data:allW.map(w=>byYearOur[2026]?.[w]??null),borderColor:C.our26,backgroundColor:'transparent',borderDash:[],fill:false,tension:0.3,pointRadius:2,spanGaps:false},
+      );
+    }
+
+    chartOrders.data = { labels, datasets: ordersDatasets };
+    chartOrders.options.plugins.tooltip.callbacks = {
+      ...chartOrders.options.plugins.tooltip.callbacks,
+      title: (items) => {
+        if (!items.length) return '';
+        const it = items[0];
+        const y = it.dataset.label; // '2025' или '2026'
+        const w = allW[it.dataIndex];
+        return (weekStartByYear[y]?.[w] || labels[it.dataIndex] || '').slice(0,10);
+      }
+    };
+
+    EXPORT_DATA.orders = allW.map((w, i) => {
+      const row = {
+        'Неделя': labels[i],
+        'Заказы 2025': byYear[2025]?.[w]?.o ?? '',
+        'Заказы 2026': byYear[2026]?.[w]?.o ?? '',
+      };
+      if (ourOnly) {
+        row['Наши 2025'] = byYearOur[2025]?.[w] ?? '';
+        row['Наши 2026'] = byYearOur[2026]?.[w] ?? '';
+      }
+      return row;
+    });
+  }
+
+  chartOrders._monthMode = monthMode;
+  chartOrders._axisMonths = ordersAxisMonths;
   chartOrders.update();
 
-  EXPORT_DATA.orders = allW.map((w, i) => {
-    const row = {
-      'Неделя': labels[i],
-      'Заказы 2025': byYear[2025]?.[w]?.o ?? '',
-      'Заказы 2026': byYear[2026]?.[w]?.o ?? '',
-    };
-    if (ourOnly) {
-      row['Наши 2025'] = byYearOur[2025]?.[w] ?? '';
-      row['Наши 2026'] = byYearOur[2026]?.[w] ?? '';
-    }
-    return row;
-  });
+  document.getElementById('ordersGranularity').textContent = granularitySuffix;
 
   // Статы заказов
   const s = (arr,y,f) => arr.filter(r => getISOWeekInfo(r.order_date).isoYear===y).reduce((a,r)=>a+(r[f]||0),0);
@@ -877,26 +1010,15 @@ function applyFilters() {
   const hfSource = hasSearch ? topKws : kws;
 
   const searchSubtitleText = hasSearch ? ` — по запросу «${searchQuery}»` : '';
-  document.getElementById('hfYoySubtitle').textContent = searchSubtitleText;
-  document.getElementById('kwSubtitle').textContent = searchSubtitleText;
+  document.getElementById('hfYoySubtitle').textContent = granularitySuffix + searchSubtitleText;
+  document.getElementById('kwSubtitle').textContent = granularitySuffix + searchSubtitleText;
   document.getElementById('trendsSubtitle').textContent = searchSubtitleText;
 
   // ВЧ-запросы YoY по неделям (2025 vs 2026), выровнено по номеру ISO-недели
-  const hfByYearWeek = {};
-  const hfWeekStartByYear = { 2025: {}, 2026: {} };
-  for (const r of hfSource) {
-    const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
-    if (y !== 2025 && y !== 2026) continue;
-    if (!hfByYearWeek[y]) hfByYearWeek[y] = {};
-    hfByYearWeek[y][wk] = (hfByYearWeek[y][wk] || 0) + r.total_freq;
-    if (!hfWeekStartByYear[y][wk] || r.d1 < hfWeekStartByYear[y][wk]) {
-      hfWeekStartByYear[y][wk] = r.d1;
-    }
-  }
-
-  // Диапазон недель без фильтра по месяцу (та же логика, что у графика заказов) —
+  // Диапазон без фильтра по месяцу (та же логика, что у графика заказов) —
   // чтобы исключённые месяцы показывались как реальный разрыв линии, а не
-  // "склеивались" по соседним оставшимся точкам.
+  // "склеивались" по соседним оставшимся точкам. Используется и здесь, и в
+  // chartKw ниже.
   const hfSourceForRange = (hasSearch ? DATA.top_keywords : DATA.kw_weekly).filter(r =>
     (!dateTo   || r.d1 <= dateTo)   &&
     (!dateFrom || r.d2 >= dateFrom) &&
@@ -904,110 +1026,227 @@ function applyFilters() {
     matchesSelectedGenders(r.gender) &&
     (!hasSearch || !searchQuery || r.keyword.toLowerCase().includes(searchQuery))
   );
-  const hfRangeWeeks = [];
-  for (const r of hfSourceForRange) {
-    const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
-    if (y === 2025 || y === 2026) hfRangeWeeks.push(wk);
-  }
-  const hfW25 = Object.keys(hfByYearWeek[2025]||{}).map(Number).sort((a,b)=>a-b);
-  const hfW26 = Object.keys(hfByYearWeek[2026]||{}).map(Number).sort((a,b)=>a-b);
-  let hfAllW;
-  if (hfRangeWeeks.length) {
-    const minW = Math.min(...hfRangeWeeks), maxW = Math.max(...hfRangeWeeks);
-    hfAllW = [];
-    for (let w = minW; w <= maxW; w++) hfAllW.push(w);
-  } else {
-    hfAllW = [...new Set([...hfW25,...hfW26])].sort((a,b)=>a-b);
-  }
-  const hfLabelRefYear = hfW26.length ? 2026 : 2025;
-  const hfLabels = hfAllW.map(w => (hfWeekStartByYear[2026][w] || hfWeekStartByYear[2025][w] || isoWeekMonday(hfLabelRefYear, w)).slice(0,10));
 
-  chartHfYoy.data = {
-    labels: hfLabels,
-    datasets:[
-      {label:'2025',data:hfAllW.map(w=>hfByYearWeek[2025]?.[w]??null),borderColor:C.y25,backgroundColor:C.y25bg,fill:true,tension:0.3,pointRadius:3,spanGaps:false},
-      {label:'2026',data:hfAllW.map(w=>hfByYearWeek[2026]?.[w]??null),borderColor:C.y26,backgroundColor:C.y26bg,fill:true,tension:0.3,pointRadius:3,spanGaps:false},
-    ]
-  };
-  chartHfYoy.options.plugins.tooltip.callbacks = {
-    ...chartHfYoy.options.plugins.tooltip.callbacks,
-    title: (items) => {
-      if (!items.length) return '';
-      const it = items[0];
-      const y = it.dataset.label;
-      const w = hfAllW[it.dataIndex];
-      return (hfWeekStartByYear[y]?.[w] || hfLabels[it.dataIndex] || '').slice(0,10);
+  let hfAxisMonths = null; // заполняется только в monthMode, для клика по точке
+
+  if (monthMode) {
+    const hfByMonth = {};
+    for (const r of hfSource) {
+      const y = parseInt(r.d1.slice(0,4), 10);
+      const m = parseInt(r.d1.slice(5,7), 10);
+      if (y !== 2025 && y !== 2026) continue;
+      if (!hfByMonth[y]) hfByMonth[y] = {};
+      hfByMonth[y][m] = (hfByMonth[y][m] || 0) + r.total_freq;
     }
-  };
+    const monthsInRange = [];
+    for (const r of hfSourceForRange) {
+      const y = parseInt(r.d1.slice(0,4), 10);
+      const m = parseInt(r.d1.slice(5,7), 10);
+      if (y === 2025 || y === 2026) monthsInRange.push(m);
+    }
+    let hfAllM;
+    if (monthsInRange.length) {
+      const minM = Math.min(...monthsInRange), maxM = Math.max(...monthsInRange);
+      hfAllM = [];
+      for (let m = minM; m <= maxM; m++) hfAllM.push(m);
+    } else {
+      hfAllM = [1,2,3,4,5,6,7,8,9,10,11,12];
+    }
+    const hfMonthLabels = hfAllM.map(m => MONTH_NAMES[m-1]);
+    hfAxisMonths = hfAllM;
+
+    chartHfYoy.data = {
+      labels: hfMonthLabels,
+      datasets:[
+        {label:'2025',data:hfAllM.map(m=>hfByMonth[2025]?.[m]??null),borderColor:C.y25,backgroundColor:C.y25bg,fill:true,tension:0.3,pointRadius:4,spanGaps:false},
+        {label:'2026',data:hfAllM.map(m=>hfByMonth[2026]?.[m]??null),borderColor:C.y26,backgroundColor:C.y26bg,fill:true,tension:0.3,pointRadius:4,spanGaps:false},
+      ]
+    };
+    chartHfYoy.options.plugins.tooltip.callbacks = {
+      ...chartHfYoy.options.plugins.tooltip.callbacks,
+      title: (items) => items.length ? (hfMonthLabels[items[0].dataIndex] || '') : '',
+    };
+
+    EXPORT_DATA.hfYoy = hfAllM.map((m, i) => ({
+      'Месяц': hfMonthLabels[i],
+      '2025': hfByMonth[2025]?.[m] ?? '',
+      '2026': hfByMonth[2026]?.[m] ?? '',
+    }));
+  } else {
+    const hfByYearWeek = {};
+    const hfWeekStartByYear = { 2025: {}, 2026: {} };
+    for (const r of hfSource) {
+      const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
+      if (y !== 2025 && y !== 2026) continue;
+      if (!hfByYearWeek[y]) hfByYearWeek[y] = {};
+      hfByYearWeek[y][wk] = (hfByYearWeek[y][wk] || 0) + r.total_freq;
+      if (!hfWeekStartByYear[y][wk] || r.d1 < hfWeekStartByYear[y][wk]) {
+        hfWeekStartByYear[y][wk] = r.d1;
+      }
+    }
+
+    const hfRangeWeeks = [];
+    for (const r of hfSourceForRange) {
+      const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
+      if (y === 2025 || y === 2026) hfRangeWeeks.push(wk);
+    }
+    const hfW25 = Object.keys(hfByYearWeek[2025]||{}).map(Number).sort((a,b)=>a-b);
+    const hfW26 = Object.keys(hfByYearWeek[2026]||{}).map(Number).sort((a,b)=>a-b);
+    let hfAllW;
+    if (hfRangeWeeks.length) {
+      const minW = Math.min(...hfRangeWeeks), maxW = Math.max(...hfRangeWeeks);
+      hfAllW = [];
+      for (let w = minW; w <= maxW; w++) hfAllW.push(w);
+    } else {
+      hfAllW = [...new Set([...hfW25,...hfW26])].sort((a,b)=>a-b);
+    }
+    const hfLabelRefYear = hfW26.length ? 2026 : 2025;
+    const hfLabels = hfAllW.map(w => (hfWeekStartByYear[2026][w] || hfWeekStartByYear[2025][w] || isoWeekMonday(hfLabelRefYear, w)).slice(0,10));
+
+    chartHfYoy.data = {
+      labels: hfLabels,
+      datasets:[
+        {label:'2025',data:hfAllW.map(w=>hfByYearWeek[2025]?.[w]??null),borderColor:C.y25,backgroundColor:C.y25bg,fill:true,tension:0.3,pointRadius:3,spanGaps:false},
+        {label:'2026',data:hfAllW.map(w=>hfByYearWeek[2026]?.[w]??null),borderColor:C.y26,backgroundColor:C.y26bg,fill:true,tension:0.3,pointRadius:3,spanGaps:false},
+      ]
+    };
+    chartHfYoy.options.plugins.tooltip.callbacks = {
+      ...chartHfYoy.options.plugins.tooltip.callbacks,
+      title: (items) => {
+        if (!items.length) return '';
+        const it = items[0];
+        const y = it.dataset.label;
+        const w = hfAllW[it.dataIndex];
+        return (hfWeekStartByYear[y]?.[w] || hfLabels[it.dataIndex] || '').slice(0,10);
+      }
+    };
+
+    EXPORT_DATA.hfYoy = hfAllW.map((w, i) => ({
+      'Неделя': hfLabels[i],
+      '2025': hfByYearWeek[2025]?.[w] ?? '',
+      '2026': hfByYearWeek[2026]?.[w] ?? '',
+    }));
+  }
+
+  chartHfYoy._monthMode = monthMode;
+  chartHfYoy._axisMonths = hfAxisMonths;
   chartHfYoy.update();
 
-  EXPORT_DATA.hfYoy = hfAllW.map((w, i) => ({
-    'Неделя': hfLabels[i],
-    '2025': hfByYearWeek[2025]?.[w] ?? '',
-    '2026': hfByYearWeek[2026]?.[w] ?? '',
-  }));
-
-  const sumHf = (y) => Object.values(hfByYearWeek[y]||{}).reduce((a,v)=>a+v,0);
+  // Суммы считаются напрямую из hfSource (по календарному году) — не зависят
+  // от того, какая сейчас гранулярность на графике (месяцы или недели).
+  const sumHf = (y) => hfSource.filter(r => parseInt(r.d1.slice(0,4),10) === y).reduce((a,r)=>a+r.total_freq,0);
   document.getElementById('stat-hf25').textContent = fmtNum(sumHf(2025));
   document.getElementById('stat-hf26').textContent = fmtNum(sumHf(2026));
 
-  // Динамика частоты по неделям — разбивка ВЧ/СЧ/НЧ. Раньше при активном поиске
-  // top_keywords содержал только ВЧ-запросы (SQL их отфильтровывал), поэтому
-  // приходилось показывать одну общую линию. Теперь SQL отдаёт все три типа,
-  // так что разбивка ВЧ/СЧ/НЧ работает одинаково что с поиском, что без.
-  // Ключ — (год, номер ISO-недели), а не сырая дата d1: так же, как у графика
-  // "год к году", это даёт настоящую непрерывную ось и честно показывает
-  // недели, которых вообще нет в mpstats_kw_dashboard (а не просто "перескакивает"
-  // через них, как было раньше при группировке по сырым датам).
-  const kwByYearWeek = {};
-  if (hasSearch) {
-    for (const r of topKws) {
-      const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
-      if (!kwByYearWeek[y]) kwByYearWeek[y] = {};
-      if (!kwByYearWeek[y][wk]) kwByYearWeek[y][wk] = { hf:0, mf:0, lf:0 };
-      if (r.freq_type && r.freq_type.startsWith('ВЧ')) kwByYearWeek[y][wk].hf += r.total_freq;
-      else if (r.freq_type && r.freq_type.startsWith('СЧ')) kwByYearWeek[y][wk].mf += r.total_freq;
-      else if (r.freq_type && r.freq_type.startsWith('НЧ')) kwByYearWeek[y][wk].lf += r.total_freq;
+  // Динамика частоты — разбивка ВЧ/СЧ/НЧ, сплошная хронологическая шкала
+  // (не сравнение годов, в отличие от двух графиков выше). Раньше при
+  // активном поиске top_keywords содержал только ВЧ-запросы (SQL их
+  // отфильтровывал), поэтому приходилось показывать одну общую линию.
+  // Теперь SQL отдаёт все три типа, разбивка работает одинаково что с
+  // поиском, что без.
+  let kwAxisMonths = null; // заполняется только в monthMode, для клика по точке
+
+  if (monthMode) {
+    const kwByYearMonth = {};
+    if (hasSearch) {
+      for (const r of topKws) {
+        const y = parseInt(r.d1.slice(0,4), 10);
+        const m = parseInt(r.d1.slice(5,7), 10);
+        if (!kwByYearMonth[y]) kwByYearMonth[y] = {};
+        if (!kwByYearMonth[y][m]) kwByYearMonth[y][m] = { hf:0, mf:0, lf:0 };
+        if (r.freq_type && r.freq_type.startsWith('ВЧ')) kwByYearMonth[y][m].hf += r.total_freq;
+        else if (r.freq_type && r.freq_type.startsWith('СЧ')) kwByYearMonth[y][m].mf += r.total_freq;
+        else if (r.freq_type && r.freq_type.startsWith('НЧ')) kwByYearMonth[y][m].lf += r.total_freq;
+      }
+    } else {
+      for (const r of kws) {
+        const y = parseInt(r.d1.slice(0,4), 10);
+        const m = parseInt(r.d1.slice(5,7), 10);
+        if (!kwByYearMonth[y]) kwByYearMonth[y] = {};
+        if (!kwByYearMonth[y][m]) kwByYearMonth[y][m] = { hf:0, mf:0, lf:0 };
+        kwByYearMonth[y][m].hf += r.hf_freq;
+        kwByYearMonth[y][m].mf += r.mf_freq;
+        kwByYearMonth[y][m].lf += r.lf_freq;
+      }
     }
+
+    const kwYearMonthPairs = hfSourceForRange.map(r => ({
+      year: parseInt(r.d1.slice(0,4), 10),
+      month: parseInt(r.d1.slice(5,7), 10),
+    }));
+    const kwMonthSeq = buildChronoMonthSeq(kwYearMonthPairs);
+    const kwLabels = kwMonthSeq.map(p => MONTH_NAMES[p.month-1] + ' ' + p.year);
+    kwAxisMonths = kwMonthSeq.map(p => p.month);
+
+    chartKw.data = {
+      labels: kwLabels,
+      datasets: [
+        {label:'ВЧ',data:kwMonthSeq.map(p=>kwByYearMonth[p.year]?.[p.month]?.hf??null),borderColor:C.hf,backgroundColor:'rgba(244,114,182,0.1)',fill:true,tension:0.3,pointRadius:3,spanGaps:false},
+        {label:'СЧ',data:kwMonthSeq.map(p=>kwByYearMonth[p.year]?.[p.month]?.mf??null),borderColor:C.mf,backgroundColor:'rgba(74,222,128,0.1)',fill:true,tension:0.3,pointRadius:3,spanGaps:false},
+        {label:'НЧ',data:kwMonthSeq.map(p=>kwByYearMonth[p.year]?.[p.month]?.lf??null),borderColor:C.lf,backgroundColor:'rgba(251,191,36,0.1)',fill:true,tension:0.3,pointRadius:3,spanGaps:false},
+      ]
+    };
+
+    EXPORT_DATA.kw = kwMonthSeq.map((p, i) => ({
+      'Месяц': kwLabels[i],
+      'ВЧ': kwByYearMonth[p.year]?.[p.month]?.hf ?? '',
+      'СЧ': kwByYearMonth[p.year]?.[p.month]?.mf ?? '',
+      'НЧ': kwByYearMonth[p.year]?.[p.month]?.lf ?? '',
+    }));
   } else {
-    for (const r of kws) {
-      const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
-      if (!kwByYearWeek[y]) kwByYearWeek[y] = {};
-      if (!kwByYearWeek[y][wk]) kwByYearWeek[y][wk] = { hf:0, mf:0, lf:0 };
-      kwByYearWeek[y][wk].hf += r.hf_freq;
-      kwByYearWeek[y][wk].mf += r.mf_freq;
-      kwByYearWeek[y][wk].lf += r.lf_freq;
+    const kwByYearWeek = {};
+    if (hasSearch) {
+      for (const r of topKws) {
+        const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
+        if (!kwByYearWeek[y]) kwByYearWeek[y] = {};
+        if (!kwByYearWeek[y][wk]) kwByYearWeek[y][wk] = { hf:0, mf:0, lf:0 };
+        if (r.freq_type && r.freq_type.startsWith('ВЧ')) kwByYearWeek[y][wk].hf += r.total_freq;
+        else if (r.freq_type && r.freq_type.startsWith('СЧ')) kwByYearWeek[y][wk].mf += r.total_freq;
+        else if (r.freq_type && r.freq_type.startsWith('НЧ')) kwByYearWeek[y][wk].lf += r.total_freq;
+      }
+    } else {
+      for (const r of kws) {
+        const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
+        if (!kwByYearWeek[y]) kwByYearWeek[y] = {};
+        if (!kwByYearWeek[y][wk]) kwByYearWeek[y][wk] = { hf:0, mf:0, lf:0 };
+        kwByYearWeek[y][wk].hf += r.hf_freq;
+        kwByYearWeek[y][wk].mf += r.mf_freq;
+        kwByYearWeek[y][wk].lf += r.lf_freq;
+      }
     }
+
+    // Диапазон — без фильтра по месяцу (hfSourceForRange), как и у остальных
+    // графиков, плюс ХРОНОЛОГИЧЕСКИ непрерывный (не "какие реальные даты
+    // нашлись", а "все недели подряд от первой до последней, включая полностью
+    // отсутствующие в данных") — убирает нерегулярные скачки дат и честно
+    // показывает разрывы там, где их показывает график "год к году".
+    const kwYearWeekPairs = hfSourceForRange.map(r => {
+      const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
+      return { year: y, week: wk };
+    });
+    const kwWeekSeq = buildChronoWeekSeq(kwYearWeekPairs);
+    const kwLabels = kwWeekSeq.map(p => isoWeekMonday(p.year, p.week));
+
+    chartKw.data = {
+      labels: kwLabels.map(l=>l.slice(0,10)),
+      datasets: [
+        {label:'ВЧ',data:kwWeekSeq.map(p=>kwByYearWeek[p.year]?.[p.week]?.hf??null),borderColor:C.hf,backgroundColor:'rgba(244,114,182,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
+        {label:'СЧ',data:kwWeekSeq.map(p=>kwByYearWeek[p.year]?.[p.week]?.mf??null),borderColor:C.mf,backgroundColor:'rgba(74,222,128,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
+        {label:'НЧ',data:kwWeekSeq.map(p=>kwByYearWeek[p.year]?.[p.week]?.lf??null),borderColor:C.lf,backgroundColor:'rgba(251,191,36,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
+      ]
+    };
+
+    EXPORT_DATA.kw = kwWeekSeq.map((p, i) => ({
+      'Неделя': kwLabels[i],
+      'ВЧ': kwByYearWeek[p.year]?.[p.week]?.hf ?? '',
+      'СЧ': kwByYearWeek[p.year]?.[p.week]?.mf ?? '',
+      'НЧ': kwByYearWeek[p.year]?.[p.week]?.lf ?? '',
+    }));
   }
 
-  // Диапазон — без фильтра по месяцу (hfSourceForRange), как и у остальных
-  // графиков, плюс теперь ХРОНОЛОГИЧЕСКИ непрерывный (не "какие реальные даты
-  // нашлись", а "все недели подряд от первой до последней, включая полностью
-  // отсутствующие в данных") — это и убирает нерегулярные скачки дат, и честно
-  // показывает разрывы там, где их показывает график "год к году".
-  const kwYearWeekPairs = hfSourceForRange.map(r => {
-    const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
-    return { year: y, week: wk };
-  });
-  const kwWeekSeq = buildChronoWeekSeq(kwYearWeekPairs);
-  const kwLabels = kwWeekSeq.map(p => isoWeekMonday(p.year, p.week));
-
-  chartKw.data = {
-    labels: kwLabels.map(l=>l.slice(0,10)),
-    datasets: [
-      {label:'ВЧ',data:kwWeekSeq.map(p=>kwByYearWeek[p.year]?.[p.week]?.hf??null),borderColor:C.hf,backgroundColor:'rgba(244,114,182,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
-      {label:'СЧ',data:kwWeekSeq.map(p=>kwByYearWeek[p.year]?.[p.week]?.mf??null),borderColor:C.mf,backgroundColor:'rgba(74,222,128,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
-      {label:'НЧ',data:kwWeekSeq.map(p=>kwByYearWeek[p.year]?.[p.week]?.lf??null),borderColor:C.lf,backgroundColor:'rgba(251,191,36,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
-    ]
-  };
+  chartKw._monthMode = monthMode;
+  chartKw._axisMonths = kwAxisMonths;
   chartKw.update();
-
-  EXPORT_DATA.kw = kwWeekSeq.map((p, i) => ({
-    'Неделя': kwLabels[i],
-    'ВЧ': kwByYearWeek[p.year]?.[p.week]?.hf ?? '',
-    'СЧ': kwByYearWeek[p.year]?.[p.week]?.mf ?? '',
-    'НЧ': kwByYearWeek[p.year]?.[p.week]?.lf ?? '',
-  }));
 
   // Группируем отдельно по каждому типу частотности — раньше здесь были
   // только ВЧ-запросы (SQL их отфильтровывал), теперь СЧ/ВЧ/НЧ есть все,

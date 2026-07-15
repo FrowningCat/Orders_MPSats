@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Аналитика WB — Дашборд</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
@@ -15,6 +16,10 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 #updated { font-size:12px; color:#64748b; }
 .docs-btn { font-size:12px; color:#94a3b8; background:#1a1d27; border:1px solid #2d3148; border-radius:6px; padding:6px 12px; text-decoration:none; white-space:nowrap; transition:border-color 0.15s, color 0.15s; }
 .docs-btn:hover { color:#e2e8f0; border-color:#60a5fa; }
+.export-btn { font-size:11px; font-weight:500; color:#4ade80; background:rgba(74,222,128,0.08); border:1px solid rgba(74,222,128,0.3); border-radius:5px; padding:3px 10px; cursor:pointer; white-space:nowrap; float:right; transition:background 0.15s, border-color 0.15s; }
+.export-btn:hover { background:rgba(74,222,128,0.16); border-color:#4ade80; }
+.card h2 { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.card h2 .h2-text { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
 .filters { background:#151824; border-bottom:1px solid #2d3148; padding:14px 28px; display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
 .filter-group { display:flex; flex-direction:column; gap:5px; }
 .filter-group label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.4px; }
@@ -120,11 +125,11 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 </div>
 <div class="grid">
   <div class="card full">
-    <h2>Тренды по категориям <span style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">(за 2025 год, на основании частоты запросов месяц к месяцу, запросов &gt; 2000 — защита от шума; рост от +40%, падение от −30%)</span><span id="trendsSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span> <span id="clickedDateBadge" style="display:none;"></span></h2>
+    <h2><span class="h2-text">Тренды по категориям <span style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">(за 2025 год, на основании частоты запросов месяц к месяцу, запросов &gt; 2000 — защита от шума; рост от +40%, падение от −30%)</span><span id="trendsSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span> <span id="clickedDateBadge" style="display:none;"></span></span><button type="button" class="export-btn" id="exportTrendsBtn">⬇ Excel</button></h2>
     <ul class="trend-list" id="trendList"></ul>
   </div>
   <div class="card">
-    <h2>Заказы по неделям<span id="ordersSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;"></span></h2>
+    <h2><span class="h2-text">Заказы по неделям<span id="ordersSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;"></span></span><button type="button" class="export-btn" id="exportOrdersBtn">⬇ Excel</button></h2>
     <div class="stat-row">
       <div class="stat"><div class="stat-val" id="stat-o25">—</div><div class="stat-lbl">Заказов 2025</div></div>
       <div class="stat"><div class="stat-val" id="stat-o26">—</div><div class="stat-lbl">Заказов 2026</div></div>
@@ -134,7 +139,7 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <div class="chart-wrap"><canvas id="chartOrders"></canvas></div>
   </div>
   <div class="card">
-    <h2>Динамика суммарной частоты запросов MPStats - год к году<span id="hfYoySubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span></h2>
+    <h2><span class="h2-text">Динамика суммарной частоты запросов MPStats - год к году<span id="hfYoySubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span></span><button type="button" class="export-btn" id="exportHfYoyBtn">⬇ Excel</button></h2>
     <div class="stat-row">
       <div class="stat"><div class="stat-val" id="stat-hf25">—</div><div class="stat-lbl">Частота запросов 2025</div></div>
       <div class="stat"><div class="stat-val" id="stat-hf26">—</div><div class="stat-lbl">Частота запросов 2026</div></div>
@@ -142,11 +147,11 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     <div class="chart-wrap"><canvas id="chartHfYoy"></canvas></div>
   </div>
   <div class="card">
-    <h2>Динамика частоты запросов MPStats<span id="kwSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span></h2>
+    <h2><span class="h2-text">Динамика частоты запросов MPStats<span id="kwSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span></span><button type="button" class="export-btn" id="exportKwBtn">⬇ Excel</button></h2>
     <div class="chart-wrap"><canvas id="chartKw"></canvas></div>
   </div>
   <div class="card">
-    <h2>Топ-50 ключевых запросов MPStats</h2>
+    <h2><span class="h2-text">Топ-50 ключевых запросов MPStats</span><button type="button" class="export-btn" id="exportTopBtn">⬇ Excel</button></h2>
     <div style="overflow-y:auto;max-height:340px;">
       <table class="kw-table">
         <thead><tr><th>#</th><th>Запрос</th><th>Частота</th><th>WB</th><th>Тип</th><th>Категория</th></tr></thead>
@@ -164,6 +169,21 @@ firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.firestore();
 
 let DATA = { updated_at: '', orders_daily: [], order_subjects: [], kw_weekly: [], top_keywords: [] };
+
+// Данные для экспорта в Excel — заполняются заново при каждом applyFilters(),
+// всегда отражают то, что сейчас реально отфильтровано и показано на экране.
+let EXPORT_DATA = { trends: [], orders: [], hfYoy: [], kw: [], topKeywords: [] };
+
+function exportToExcel(rows, filename, sheetName) {
+  if (!rows || !rows.length) {
+    alert('Нет данных для экспорта при текущих фильтрах.');
+    return;
+  }
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Данные');
+  XLSX.writeFile(wb, filename);
+}
 
 async function fetchChunks(dataset, count) {
   const promises = [];
@@ -316,6 +336,17 @@ document.getElementById('fItemBtn').addEventListener('click', toggleItemDropdown
 document.getElementById('selectAllItemsBtn').addEventListener('click', selectAllItems);
 document.getElementById('clearAllItemsBtn').addEventListener('click', clearAllItems);
 document.getElementById('btnReset').addEventListener('click', resetFilters);
+
+document.getElementById('exportTrendsBtn').addEventListener('click', () =>
+  exportToExcel(EXPORT_DATA.trends, 'Тренды_по_категориям.xlsx', 'Тренды'));
+document.getElementById('exportOrdersBtn').addEventListener('click', () =>
+  exportToExcel(EXPORT_DATA.orders, 'Заказы_по_неделям.xlsx', 'Заказы'));
+document.getElementById('exportHfYoyBtn').addEventListener('click', () =>
+  exportToExcel(EXPORT_DATA.hfYoy, 'Частота_запросов_YoY.xlsx', 'Частота YoY'));
+document.getElementById('exportKwBtn').addEventListener('click', () =>
+  exportToExcel(EXPORT_DATA.kw, 'Динамика_частоты_MPStats.xlsx', 'Динамика частоты'));
+document.getElementById('exportTopBtn').addEventListener('click', () =>
+  exportToExcel(EXPORT_DATA.topKeywords, 'Топ_50_запросов.xlsx', 'Топ-50'));
 
 const allOrderDates = DATA.orders_daily.map(r=>r.order_date).sort();
 const minDate = allOrderDates[0] || '2025-07-01';
@@ -473,6 +504,19 @@ function applyFilters() {
   };
   chartOrders.update();
 
+  EXPORT_DATA.orders = allW.map((w, i) => {
+    const row = {
+      'Неделя': labels[i],
+      'Заказы 2025': byYear[2025]?.[w]?.o ?? '',
+      'Заказы 2026': byYear[2026]?.[w]?.o ?? '',
+    };
+    if (ourOnly) {
+      row['Наши 2025'] = byYearOur[2025]?.[w] ?? '';
+      row['Наши 2026'] = byYearOur[2026]?.[w] ?? '';
+    }
+    return row;
+  });
+
   // Статы заказов
   const s = (arr,y,f) => arr.filter(r => getISOWeekInfo(r.order_date).isoYear===y).reduce((a,r)=>a+(r[f]||0),0);
   document.getElementById('stat-o25').textContent = fmtNum(s(orders,2025,'orders_cnt'));
@@ -546,6 +590,12 @@ function applyFilters() {
   };
   chartHfYoy.update();
 
+  EXPORT_DATA.hfYoy = hfAllW.map((w, i) => ({
+    'Неделя': hfLabels[i],
+    '2025': hfByYearWeek[2025]?.[w] ?? '',
+    '2026': hfByYearWeek[2026]?.[w] ?? '',
+  }));
+
   const sumHf = (y) => Object.values(hfByYearWeek[y]||{}).reduce((a,v)=>a+v,0);
   document.getElementById('stat-hf25').textContent = fmtNum(sumHf(2025));
   document.getElementById('stat-hf26').textContent = fmtNum(sumHf(2026));
@@ -580,6 +630,18 @@ function applyFilters() {
   };
   chartKw.update();
 
+  EXPORT_DATA.kw = kwLabels.map(l => {
+    const row = { 'Неделя': l };
+    if (hasSearch) {
+      row['Совпадения по запросу'] = kwByWeek[l].hf;
+    } else {
+      row['ВЧ'] = kwByWeek[l].hf;
+      row['СЧ'] = kwByWeek[l].mf;
+      row['НЧ'] = kwByWeek[l].lf;
+    }
+    return row;
+  });
+
   const agg = {};
   for(const r of topKws) {
     if(!agg[r.keyword]) agg[r.keyword]={keyword:r.keyword,freq:0,wb:0,freq_type:r.freq_type,gender:r.gender,item_name:r.item_name};
@@ -587,6 +649,16 @@ function applyFilters() {
     agg[r.keyword].wb   += r.total_wb;
   }
   const top = Object.values(agg).sort((a,b)=>b.freq-a.freq).slice(0,50);
+
+  EXPORT_DATA.topKeywords = top.map((r, i) => ({
+    '№': i + 1,
+    'Запрос': r.keyword,
+    'Частота': r.freq,
+    'WB': r.wb,
+    'Тип': r.freq_type,
+    'Пол': r.gender,
+    'Категория': r.item_name,
+  }));
   const maxF = top[0]?.freq||1;
   const tbody = document.getElementById('kwTable');
   tbody.innerHTML='';
@@ -740,11 +812,19 @@ function renderCategoryTrends(kwRows, itemFilterArr, minAbs = 2000) {
 
   if (!items.length) {
     list.innerHTML = '<li class="trend-empty">Недостаточно данных для определения трендов за выбранный период</li>';
+    EXPORT_DATA.trends = [];
     return;
   }
 
   items.sort((a,b) => Math.abs(b.change) - Math.abs(a.change));
-  items.slice(0,15).forEach(it => {
+  const topItems = items.slice(0,15);
+  EXPORT_DATA.trends = topItems.map(it => ({
+    'Категория': it.subj,
+    'Тип': it.type === 'up' ? 'Рост' : 'Падение',
+    'Месяц': formatMonthLabel(it.date),
+    'Изменение %': Math.round(Math.abs(it.change) * 100),
+  }));
+  topItems.forEach(it => {
     const arrow = it.type==='up' ? '<span class="trend-arrow-up">▲</span>' : '<span class="trend-arrow-down">▼</span>';
     const label = it.type==='up' ? 'начало роста продаж' : 'падение продаж';
     const pct = Math.round(Math.abs(it.change) * 100);

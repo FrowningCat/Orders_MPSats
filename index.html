@@ -114,6 +114,19 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     </div>
   </div>
   <div class="filter-group">
+    <label>Пол</label>
+    <div class="multiselect" id="fGenderWrap">
+      <button type="button" class="multiselect-btn" id="fGenderBtn">Все ▾</button>
+      <div class="multiselect-panel" id="fGenderPanel" style="display:none;">
+        <div class="multiselect-actions">
+          <button type="button" id="selectAllGendersBtn">Выбрать все</button>
+          <button type="button" id="clearAllGendersBtn">Очистить</button>
+        </div>
+        <div class="multiselect-list" id="fGenderList"></div>
+      </div>
+    </div>
+  </div>
+  <div class="filter-group">
     <label>Поиск по запросу</label>
     <input type="text" id="fSearch" placeholder="например: шорты женские летние">
   </div>
@@ -168,7 +181,7 @@ const META_DOC_PATH = "wb_yoy_dashboard_meta/latest";
 firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.firestore();
 
-let DATA = { updated_at: '', orders_daily: [], order_subjects: [], kw_weekly: [], top_keywords: [] };
+let DATA = { updated_at: '', orders_daily: [], order_subjects: [], order_genders: [], kw_weekly: [], top_keywords: [] };
 
 // Данные для экспорта в Excel — заполняются заново при каждом applyFilters(),
 // всегда отражают то, что сейчас реально отфильтровано и показано на экране.
@@ -212,14 +225,16 @@ async function loadDashboard() {
     DATA.updated_at = meta.updated_at || '';
     const chunks = meta.chunks || {};
 
-    const [orders_daily, order_subjects, kw_weekly, top_keywords] = await Promise.all([
+    const [orders_daily, order_subjects, order_genders, kw_weekly, top_keywords] = await Promise.all([
       fetchChunks('orders_daily', chunks.orders_daily || 0),
       fetchChunks('order_subjects', chunks.order_subjects || 0),
+      fetchChunks('order_genders', chunks.order_genders || 0),
       fetchChunks('kw_weekly', chunks.kw_weekly || 0),
       fetchChunks('top_keywords', chunks.top_keywords || 0),
     ]);
     DATA.orders_daily   = orders_daily;
     DATA.order_subjects = order_subjects;
+    DATA.order_genders  = order_genders;
     DATA.kw_weekly      = kw_weekly;
     DATA.top_keywords   = top_keywords;
 
@@ -302,6 +317,9 @@ document.addEventListener('click', function(e){
   const wrap = document.getElementById('fItemWrap');
   const panel = document.getElementById('fItemPanel');
   if (wrap && panel && !wrap.contains(e.target)) panel.style.display = 'none';
+  const genderWrap = document.getElementById('fGenderWrap');
+  const genderPanel = document.getElementById('fGenderPanel');
+  if (genderWrap && genderPanel && !genderWrap.contains(e.target)) genderPanel.style.display = 'none';
 });
 
 function selectAllItems() {
@@ -323,6 +341,64 @@ function clearAllItems() {
 buildItemCheckboxList();
 updateItemButtonLabel();
 
+// Пол — тот же мультиселект-паттерн, что и у категорий, список значений
+// берётся из фактических charValue в WB_Product_Cards_Characteristics (charName='Пол'),
+// а не хардкодится, чтобы подхватывать любые реальные значения из базы.
+let selectedGenders = new Set();
+
+function buildGenderCheckboxList() {
+  const listEl = document.getElementById('fGenderList');
+  listEl.innerHTML = '';
+  DATA.order_genders.forEach(r => {
+    const label = document.createElement('label');
+    label.className = 'multiselect-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = r.gender;
+    cb.addEventListener('change', function(){
+      if (cb.checked) selectedGenders.add(cb.value); else selectedGenders.delete(cb.value);
+      updateGenderButtonLabel();
+      applyFilters();
+    });
+    const span = document.createElement('span');
+    span.textContent = r.gender;
+    label.appendChild(cb);
+    label.appendChild(span);
+    listEl.appendChild(label);
+  });
+}
+
+function updateGenderButtonLabel() {
+  const btn = document.getElementById('fGenderBtn');
+  if (selectedGenders.size === 0) btn.textContent = 'Все ▾';
+  else if (selectedGenders.size === 1) btn.textContent = [...selectedGenders][0] + ' ▾';
+  else btn.textContent = 'Выбрано: ' + selectedGenders.size + ' ▾';
+}
+
+function toggleGenderDropdown() {
+  const panel = document.getElementById('fGenderPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function selectAllGenders() {
+  document.querySelectorAll('#fGenderList input[type=checkbox]').forEach(cb => {
+    cb.checked = true;
+    selectedGenders.add(cb.value);
+  });
+  updateGenderButtonLabel();
+  applyFilters();
+}
+
+function clearAllGenders() {
+  document.querySelectorAll('#fGenderList input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  selectedGenders.clear();
+  updateGenderButtonLabel();
+  applyFilters();
+}
+
+buildGenderCheckboxList();
+updateGenderButtonLabel();
+
 // Поиск по запросу, "наши артикулы" и период — живой фильтр без кнопки "Применить"
 document.getElementById('fSearch').addEventListener('input', () => applyFilters());
 document.getElementById('fOurOnly').addEventListener('change', () => applyFilters());
@@ -335,6 +411,9 @@ document.getElementById('fDateTo').addEventListener('change', () => applyFilters
 document.getElementById('fItemBtn').addEventListener('click', toggleItemDropdown);
 document.getElementById('selectAllItemsBtn').addEventListener('click', selectAllItems);
 document.getElementById('clearAllItemsBtn').addEventListener('click', clearAllItems);
+document.getElementById('fGenderBtn').addEventListener('click', toggleGenderDropdown);
+document.getElementById('selectAllGendersBtn').addEventListener('click', selectAllGenders);
+document.getElementById('clearAllGendersBtn').addEventListener('click', clearAllGenders);
 document.getElementById('btnReset').addEventListener('click', resetFilters);
 
 document.getElementById('exportTrendsBtn').addEventListener('click', () =>
@@ -378,6 +457,8 @@ function applyFilters() {
   const dateTo   = document.getElementById('fDateTo').value;
   const selected = [...selectedItems];               // выбранные подкатегории (может быть несколько)
   const selectedLower = selected.map(s => s.toLowerCase());
+  const selectedGendersArr = [...selectedGenders];   // выбранный пол (может быть несколько значений)
+  const selectedGendersLower = selectedGendersArr.map(s => s.toLowerCase());
   const searchQuery = document.getElementById('fSearch').value.trim().toLowerCase();
   const ourOnly = document.getElementById('fOurOnly').checked;
 
@@ -385,6 +466,16 @@ function applyFilters() {
   function matchesSelectedItems(itemNameLower) {
     if (!selectedLower.length) return true;
     return selectedLower.some(sel => itemNameLower.includes(sel) || sel.includes(itemNameLower));
+  }
+
+  // Для MPStats-данных (kw_weekly/top_keywords) пол — своя таксономия
+  // (mpstats_kw_dashboard.gender), может не совпадать дословно с charValue
+  // из WB_Product_Cards_Characteristics — поэтому сравниваем нечётко,
+  // как и с категориями. Для заказов (orders_daily.gender) сравнение точное —
+  // см. ниже, там пол взят из той же самой таблицы, что и список fGenderList.
+  function matchesSelectedGenders(genderLower) {
+    if (!selectedGendersLower.length) return true;
+    return selectedGendersLower.some(sel => genderLower.includes(sel) || sel.includes(genderLower));
   }
 
   const hasSearch = !!searchQuery;
@@ -437,6 +528,7 @@ function applyFilters() {
     if (dateFrom && r.order_date < dateFrom) return false;
     if (dateTo   && r.order_date > dateTo)   return false;
     if (effectiveOrderSubjects.length && !effectiveOrderSubjects.includes(r.subject_name)) return false;
+    if (selectedGendersArr.length && !selectedGendersArr.includes(r.gender)) return false;
     return true;
   });
   const ordersOur = orders.filter(r => r.is_our === 1);
@@ -533,7 +625,8 @@ function applyFilters() {
   const kws = DATA.kw_weekly.filter(r =>
     (!dateTo   || r.d1 <= dateTo)   &&
     (!dateFrom || r.d2 >= dateFrom) &&
-    matchesSelectedItems(r.item_name.toLowerCase())
+    matchesSelectedItems(r.item_name.toLowerCase()) &&
+    matchesSelectedGenders((r.gender || '').toLowerCase())
   );
 
   // Топ-50 ключевиков — приблизительное сопоставление с subject_name + поиск по тексту запроса
@@ -541,6 +634,7 @@ function applyFilters() {
     (!dateTo   || r.d1 <= dateTo)   &&
     (!dateFrom || r.d2 >= dateFrom) &&
     matchesSelectedItems(r.item_name.toLowerCase()) &&
+    matchesSelectedGenders((r.gender || '').toLowerCase()) &&
     (!searchQuery || r.keyword.toLowerCase().includes(searchQuery))
   );
 
@@ -683,6 +777,7 @@ function resetFilters() {
   document.getElementById('fDateFrom').value = minDate;
   document.getElementById('fDateTo').value   = maxDate;
   clearAllItems();
+  clearAllGenders();
   document.getElementById('fSearch').value = '';
   document.getElementById('fOurOnly').checked = false;
   applyFilters();

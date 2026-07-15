@@ -701,6 +701,41 @@ function applyFilters() {
     return target.toISOString().slice(0, 10);
   }
 
+  // Сколько ISO-недель в году (52 или 53) — 28 декабря всегда попадает
+  // в последнюю ISO-неделю года (это прямо из определения стандарта).
+  function isoWeeksInYear(year) {
+    return getISOWeekInfo(`${year}-12-28`).week;
+  }
+
+  // Следующая ISO-неделя с корректным переходом через границу года
+  // (неделя 52 или 53 → неделя 1 следующего года).
+  function nextIsoWeek(year, week) {
+    if (week >= isoWeeksInYear(year)) return { year: year + 1, week: 1 };
+    return { year, week: week + 1 };
+  }
+
+  // Непрерывная ХРОНОЛОГИЧЕСКАЯ последовательность ISO-недель между самой
+  // ранней и самой поздней парой (год,неделя) из списка — в отличие от
+  // hfAllW/allW (которые специально накладывают недели разных годов друг на
+  // друга для сравнения YoY), здесь года идут подряд по-настоящему, потому
+  // что "Динамика частоты запросов MPStats" — один сплошной график по
+  // времени, а не сравнение 2025 vs 2026.
+  function buildChronoWeekSeq(yearWeekPairs) {
+    if (!yearWeekPairs.length) return [];
+    const sorted = [...yearWeekPairs].sort((a, b) => a.year - b.year || a.week - b.week);
+    const start = sorted[0], end = sorted[sorted.length - 1];
+    const seq = [];
+    let cur = { year: start.year, week: start.week };
+    let guard = 0;
+    while (guard < 400) {
+      seq.push({ ...cur });
+      if (cur.year === end.year && cur.week === end.week) break;
+      cur = nextIsoWeek(cur.year, cur.week);
+      guard++;
+    }
+    return seq;
+  }
+
   // Непрерывная последовательность дат с шагом в stepDays — не используется
   // сейчас (chartKw строит ось по реальным датам d1, см. ниже), оставлено
   // на случай если понадобится синтетическая равномерная сетto для другого
@@ -920,46 +955,58 @@ function applyFilters() {
   // top_keywords содержал только ВЧ-запросы (SQL их отфильтровывал), поэтому
   // приходилось показывать одну общую линию. Теперь SQL отдаёт все три типа,
   // так что разбивка ВЧ/СЧ/НЧ работает одинаково что с поиском, что без.
-  const kwByWeek = {};
+  // Ключ — (год, номер ISO-недели), а не сырая дата d1: так же, как у графика
+  // "год к году", это даёт настоящую непрерывную ось и честно показывает
+  // недели, которых вообще нет в mpstats_kw_dashboard (а не просто "перескакивает"
+  // через них, как было раньше при группировке по сырым датам).
+  const kwByYearWeek = {};
   if (hasSearch) {
     for (const r of topKws) {
-      if (!kwByWeek[r.d1]) kwByWeek[r.d1] = { hf:0, mf:0, lf:0 };
-      if (r.freq_type && r.freq_type.startsWith('ВЧ')) kwByWeek[r.d1].hf += r.total_freq;
-      else if (r.freq_type && r.freq_type.startsWith('СЧ')) kwByWeek[r.d1].mf += r.total_freq;
-      else if (r.freq_type && r.freq_type.startsWith('НЧ')) kwByWeek[r.d1].lf += r.total_freq;
+      const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
+      if (!kwByYearWeek[y]) kwByYearWeek[y] = {};
+      if (!kwByYearWeek[y][wk]) kwByYearWeek[y][wk] = { hf:0, mf:0, lf:0 };
+      if (r.freq_type && r.freq_type.startsWith('ВЧ')) kwByYearWeek[y][wk].hf += r.total_freq;
+      else if (r.freq_type && r.freq_type.startsWith('СЧ')) kwByYearWeek[y][wk].mf += r.total_freq;
+      else if (r.freq_type && r.freq_type.startsWith('НЧ')) kwByYearWeek[y][wk].lf += r.total_freq;
     }
   } else {
     for (const r of kws) {
-      if (!kwByWeek[r.d1]) kwByWeek[r.d1] = { hf:0, mf:0, lf:0 };
-      kwByWeek[r.d1].hf += r.hf_freq;
-      kwByWeek[r.d1].mf += r.mf_freq;
-      kwByWeek[r.d1].lf += r.lf_freq;
+      const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
+      if (!kwByYearWeek[y]) kwByYearWeek[y] = {};
+      if (!kwByYearWeek[y][wk]) kwByYearWeek[y][wk] = { hf:0, mf:0, lf:0 };
+      kwByYearWeek[y][wk].hf += r.hf_freq;
+      kwByYearWeek[y][wk].mf += r.mf_freq;
+      kwByYearWeek[y][wk].lf += r.lf_freq;
     }
   }
 
-  // Непрерывная ось дат без фильтра по месяцу — та же логика, что и у двух
-  // графиков выше (исключённые месяцы должны быть видимым разрывом линии).
-  // ВАЖНО: берём РЕАЛЬНЫЕ даты d1 из данных (а не синтетическую сетку с
-  // фиксированным шагом в 7 дней) — недели в MPStats не всегда идут строго
-  // равномерно, и синтетические даты почти никогда не совпадали с реальными
-  // ключами kwByWeek, из-за чего почти все точки превращались в "нет данных".
-  const kwLabels = [...new Set(hfSourceForRange.map(r => r.d1).filter(Boolean))].sort();
+  // Диапазон — без фильтра по месяцу (hfSourceForRange), как и у остальных
+  // графиков, плюс теперь ХРОНОЛОГИЧЕСКИ непрерывный (не "какие реальные даты
+  // нашлись", а "все недели подряд от первой до последней, включая полностью
+  // отсутствующие в данных") — это и убирает нерегулярные скачки дат, и честно
+  // показывает разрывы там, где их показывает график "год к году".
+  const kwYearWeekPairs = hfSourceForRange.map(r => {
+    const { isoYear: y, week: wk } = getISOWeekInfo(r.d1);
+    return { year: y, week: wk };
+  });
+  const kwWeekSeq = buildChronoWeekSeq(kwYearWeekPairs);
+  const kwLabels = kwWeekSeq.map(p => isoWeekMonday(p.year, p.week));
 
   chartKw.data = {
     labels: kwLabels.map(l=>l.slice(0,10)),
     datasets: [
-      {label:'ВЧ',data:kwLabels.map(l=>kwByWeek[l]?.hf??null),borderColor:C.hf,backgroundColor:'rgba(244,114,182,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
-      {label:'СЧ',data:kwLabels.map(l=>kwByWeek[l]?.mf??null),borderColor:C.mf,backgroundColor:'rgba(74,222,128,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
-      {label:'НЧ',data:kwLabels.map(l=>kwByWeek[l]?.lf??null),borderColor:C.lf,backgroundColor:'rgba(251,191,36,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
+      {label:'ВЧ',data:kwWeekSeq.map(p=>kwByYearWeek[p.year]?.[p.week]?.hf??null),borderColor:C.hf,backgroundColor:'rgba(244,114,182,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
+      {label:'СЧ',data:kwWeekSeq.map(p=>kwByYearWeek[p.year]?.[p.week]?.mf??null),borderColor:C.mf,backgroundColor:'rgba(74,222,128,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
+      {label:'НЧ',data:kwWeekSeq.map(p=>kwByYearWeek[p.year]?.[p.week]?.lf??null),borderColor:C.lf,backgroundColor:'rgba(251,191,36,0.1)',fill:true,tension:0.3,pointRadius:2,spanGaps:false},
     ]
   };
   chartKw.update();
 
-  EXPORT_DATA.kw = kwLabels.map(l => ({
-    'Неделя': l,
-    'ВЧ': kwByWeek[l]?.hf ?? '',
-    'СЧ': kwByWeek[l]?.mf ?? '',
-    'НЧ': kwByWeek[l]?.lf ?? '',
+  EXPORT_DATA.kw = kwWeekSeq.map((p, i) => ({
+    'Неделя': kwLabels[i],
+    'ВЧ': kwByYearWeek[p.year]?.[p.week]?.hf ?? '',
+    'СЧ': kwByYearWeek[p.year]?.[p.week]?.mf ?? '',
+    'НЧ': kwByYearWeek[p.year]?.[p.week]?.lf ?? '',
   }));
 
   // Группируем отдельно по каждому типу частотности — раньше здесь были

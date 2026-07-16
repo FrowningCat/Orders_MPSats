@@ -20,7 +20,20 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 .export-btn:hover { background:rgba(74,222,128,0.16); border-color:#4ade80; }
 .card h2 { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
 .card h2 .h2-text { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
-.filters { background:#151824; border-bottom:1px solid #2d3148; padding:14px 28px; display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
+.layout { display:flex; align-items:flex-start; }
+.sidebar {
+  width:270px; flex-shrink:0;
+  background:#151824; border-right:1px solid #2d3148;
+  padding:20px 18px 24px;
+  position:sticky; top:0; align-self:flex-start;
+  max-height:100vh; overflow-y:auto;
+  display:flex; flex-direction:column; gap:16px;
+}
+.main-content { flex:1; min-width:0; }
+.sidebar .filter-group input, .sidebar .filter-group select { width:100%; }
+.sidebar .multiselect-btn { width:100%; max-width:none; }
+.sidebar .btn-reset { width:100%; text-align:center; margin-top:4px; }
+.sidebar-title { font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:#64748b; font-weight:600; margin-bottom:2px; }
 .filter-group { display:flex; flex-direction:column; gap:5px; }
 .filter-group label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.4px; }
 .filter-group input:not([type="checkbox"]), .filter-group select { background:#1a1d27; border:1px solid #2d3148; border-radius:6px; color:#e2e8f0; padding:6px 10px; font-size:13px; outline:none; min-width:160px; }
@@ -97,13 +110,16 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
   <h1>📊 WB Аналитика — Дашборд</h1>
   <div style="display:flex;align-items:center;gap:16px;">
     <span id="updated"></span>
+    <button type="button" class="docs-btn" id="exportAllBtn" style="background:#14532d;border-color:#16a34a;color:#dcfce7;cursor:pointer;">⬇ Скачать всё в Excel</button>
     <a href="docs.html" target="_blank" class="docs-btn">📖 Как считаются графики</a>
   </div>
 </header>
 <div id="staleWarning" style="display:none;background:#3a1d1d;border-bottom:1px solid #7f1d1d;color:#fca5a5;font-size:13px;padding:8px 28px;">
   ⚠️ Данные не обновлялись давно — проверь, что <code style="background:#1a1d27;padding:1px 6px;border-radius:3px;">Дашборд_WB_обновление_данных.py</code> отработал по расписанию.
 </div>
-<div class="filters">
+<div class="layout">
+<aside class="sidebar">
+  <div class="sidebar-title">Фильтры</div>
   <div class="filter-group">
     <label>Период с</label>
     <input type="date" id="fDateFrom">
@@ -156,11 +172,11 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     </div>
   </div>
   <div class="filter-group">
-    <label class="spacer">.</label>
     <label class="checkbox-filter"><input type="checkbox" id="fOurOnly"> Наши артикулы</label>
   </div>
   <button class="btn-reset" id="btnReset">Сбросить</button>
-</div>
+</aside>
+<main class="main-content">
 <div class="grid">
   <div class="card full">
     <h2><span class="h2-text">Тренды по категориям <span style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">(за 2025 год, на основании частоты запросов месяц к месяцу, запросов &gt; 2000 — защита от шума; рост от +40%, падение от −30%)</span><span id="trendsSubtitle" style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0;"></span> <span id="clickedDateBadge" style="display:none;"></span></span><button type="button" class="export-btn" id="exportTrendsBtn">⬇ Excel</button></h2>
@@ -225,6 +241,8 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
     </div>
   </div>
 </div>
+</main>
+</div>
 <script>
 const FIREBASE_CONFIG = {"apiKey": "AIzaSyCbiW-rv05DdI_Y5a5WtCCyuzA8BgjD6rk", "authDomain": "task-ebb73.firebaseapp.com", "projectId": "task-ebb73", "storageBucket": "task-ebb73.firebasestorage.app", "messagingSenderId": "1031614791847", "appId": "1:1031614791847:web:a4d2c9e0b4299af979db82"};
 const CHUNK_COLLECTION = "wb_yoy_dashboard_chunks";
@@ -248,6 +266,28 @@ function exportToExcel(rows, filename, sheetName) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Данные');
   XLSX.writeFile(wb, filename);
+}
+
+function exportAllToExcel() {
+  const sections = [
+    ['Тренды', EXPORT_DATA.trends],
+    ['Заказы', EXPORT_DATA.orders],
+    ['Частота YoY', EXPORT_DATA.hfYoy],
+    ['Динамика частоты', EXPORT_DATA.kw],
+    ['Заказы vs частота', EXPORT_DATA.compare],
+    ['Топ-50 запросов', EXPORT_DATA.topKeywords],
+  ];
+  const nonEmpty = sections.filter(([, rows]) => rows && rows.length);
+  if (!nonEmpty.length) {
+    alert('Нет данных для экспорта при текущих фильтрах.');
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  nonEmpty.forEach(([name, rows]) => {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31)); // лимит Excel — 31 символ в имени листа
+  });
+  XLSX.writeFile(wb, 'WB_Дашборд_все_данные.xlsx');
 }
 
 async function fetchChunks(dataset, count) {
@@ -591,6 +631,7 @@ document.getElementById('exportCompareBtn').addEventListener('click', () =>
   exportToExcel(EXPORT_DATA.compare, 'Заказы_vs_частота.xlsx', 'Заказы vs частота'));
 document.getElementById('exportTopBtn').addEventListener('click', () =>
   exportToExcel(EXPORT_DATA.topKeywords, 'Топ_50_запросов.xlsx', 'Топ-50'));
+document.getElementById('exportAllBtn').addEventListener('click', exportAllToExcel);
 
 const allOrderDates = DATA.orders_daily.map(r=>r.order_date).sort();
 const minDate = allOrderDates[0] || '2025-07-01';
@@ -1301,6 +1342,13 @@ function applyFilters() {
       if (!ordersByMonth[y]) ordersByMonth[y] = {};
       ordersByMonth[y][m] = (ordersByMonth[y][m] || 0) + r.orders_cnt;
     }
+    const ordersOurByMonth = {};
+    for (const r of ordersOur) {
+      const y = parseInt(r.order_date.slice(0,4), 10);
+      const m = parseInt(r.order_date.slice(5,7), 10);
+      if (!ordersOurByMonth[y]) ordersOurByMonth[y] = {};
+      ordersOurByMonth[y][m] = (ordersOurByMonth[y][m] || 0) + r.orders_cnt;
+    }
     const freqByMonth = {};
     for (const r of hfSource) {
       const y = parseInt(r.d1.slice(0,4), 10);
@@ -1319,24 +1367,36 @@ function applyFilters() {
     const compareLabels = compareMonthSeq.map(p => MONTH_NAMES[p.month-1] + ' ' + p.year);
     compareAxisMonths = compareMonthSeq.map(p => p.month);
 
-    chartCompare.data = {
-      labels: compareLabels,
-      datasets: [
-        {label:'Заказы, шт',data:compareMonthSeq.map(p=>ordersByMonth[p.year]?.[p.month]??null),borderColor:C.y25,backgroundColor:'transparent',yAxisID:'y',tension:0.3,pointRadius:3,spanGaps:false},
-        {label:'Частота запросов',data:compareMonthSeq.map(p=>freqByMonth[p.year]?.[p.month]??null),borderColor:'#fbbf24',backgroundColor:'transparent',yAxisID:'y1',tension:0.3,pointRadius:3,spanGaps:false,borderDash:[6,4]},
-      ]
-    };
-    EXPORT_DATA.compare = compareMonthSeq.map((p,i) => ({
-      'Месяц': compareLabels[i],
-      'Заказы': ordersByMonth[p.year]?.[p.month] ?? '',
-      'Частота запросов': freqByMonth[p.year]?.[p.month] ?? '',
-    }));
+    const compareDatasets = [
+      {label:'Заказы, шт',data:compareMonthSeq.map(p=>ordersByMonth[p.year]?.[p.month]??null),borderColor:C.y25,backgroundColor:'transparent',yAxisID:'y',tension:0.3,pointRadius:3,spanGaps:false},
+      {label:'Частота запросов',data:compareMonthSeq.map(p=>freqByMonth[p.year]?.[p.month]??null),borderColor:'#fbbf24',backgroundColor:'transparent',yAxisID:'y1',tension:0.3,pointRadius:3,spanGaps:false,borderDash:[6,4]},
+    ];
+    if (ourOnly) {
+      compareDatasets.push({label:'Заказы (наши), шт',data:compareMonthSeq.map(p=>ordersOurByMonth[p.year]?.[p.month]??null),borderColor:C.our25,backgroundColor:'transparent',yAxisID:'y',tension:0.3,pointRadius:2,spanGaps:false,borderDash:[3,3]});
+    }
+    chartCompare.data = { labels: compareLabels, datasets: compareDatasets };
+
+    EXPORT_DATA.compare = compareMonthSeq.map((p,i) => {
+      const row = {
+        'Месяц': compareLabels[i],
+        'Заказы': ordersByMonth[p.year]?.[p.month] ?? '',
+        'Частота запросов': freqByMonth[p.year]?.[p.month] ?? '',
+      };
+      if (ourOnly) row['Заказы (наши)'] = ordersOurByMonth[p.year]?.[p.month] ?? '';
+      return row;
+    });
   } else {
     const ordersByWeek = {};
     for (const r of orders) {
       const { isoYear: y, week: w } = getISOWeekInfo(r.order_date);
       if (!ordersByWeek[y]) ordersByWeek[y] = {};
       ordersByWeek[y][w] = (ordersByWeek[y][w] || 0) + r.orders_cnt;
+    }
+    const ordersOurByWeek = {};
+    for (const r of ordersOur) {
+      const { isoYear: y, week: w } = getISOWeekInfo(r.order_date);
+      if (!ordersOurByWeek[y]) ordersOurByWeek[y] = {};
+      ordersOurByWeek[y][w] = (ordersOurByWeek[y][w] || 0) + r.orders_cnt;
     }
     const freqByWeek = {};
     for (const r of hfSource) {
@@ -1356,18 +1416,24 @@ function applyFilters() {
     const compareWeekSeq = buildChronoWeekSeq(compareYearWeekPairs);
     const compareLabelsFull = compareWeekSeq.map(p => isoWeekMonday(p.year, p.week));
 
-    chartCompare.data = {
-      labels: compareLabelsFull.map(l=>l.slice(0,10)),
-      datasets: [
-        {label:'Заказы, шт',data:compareWeekSeq.map(p=>ordersByWeek[p.year]?.[p.week]??null),borderColor:C.y25,backgroundColor:'transparent',yAxisID:'y',tension:0.3,pointRadius:2,spanGaps:false},
-        {label:'Частота запросов',data:compareWeekSeq.map(p=>freqByWeek[p.year]?.[p.week]??null),borderColor:'#fbbf24',backgroundColor:'transparent',yAxisID:'y1',tension:0.3,pointRadius:2,spanGaps:false,borderDash:[6,4]},
-      ]
-    };
-    EXPORT_DATA.compare = compareWeekSeq.map((p,i) => ({
-      'Неделя': compareLabelsFull[i].slice(0,10),
-      'Заказы': ordersByWeek[p.year]?.[p.week] ?? '',
-      'Частота запросов': freqByWeek[p.year]?.[p.week] ?? '',
-    }));
+    const compareDatasetsWeek = [
+      {label:'Заказы, шт',data:compareWeekSeq.map(p=>ordersByWeek[p.year]?.[p.week]??null),borderColor:C.y25,backgroundColor:'transparent',yAxisID:'y',tension:0.3,pointRadius:2,spanGaps:false},
+      {label:'Частота запросов',data:compareWeekSeq.map(p=>freqByWeek[p.year]?.[p.week]??null),borderColor:'#fbbf24',backgroundColor:'transparent',yAxisID:'y1',tension:0.3,pointRadius:2,spanGaps:false,borderDash:[6,4]},
+    ];
+    if (ourOnly) {
+      compareDatasetsWeek.push({label:'Заказы (наши), шт',data:compareWeekSeq.map(p=>ordersOurByWeek[p.year]?.[p.week]??null),borderColor:C.our25,backgroundColor:'transparent',yAxisID:'y',tension:0.3,pointRadius:2,spanGaps:false,borderDash:[3,3]});
+    }
+    chartCompare.data = { labels: compareLabelsFull.map(l=>l.slice(0,10)), datasets: compareDatasetsWeek };
+
+    EXPORT_DATA.compare = compareWeekSeq.map((p,i) => {
+      const row = {
+        'Неделя': compareLabelsFull[i].slice(0,10),
+        'Заказы': ordersByWeek[p.year]?.[p.week] ?? '',
+        'Частота запросов': freqByWeek[p.year]?.[p.week] ?? '',
+      };
+      if (ourOnly) row['Заказы (наши)'] = ordersOurByWeek[p.year]?.[p.week] ?? '';
+      return row;
+    });
   }
 
   document.getElementById('compareSubtitle').textContent = monthMode ? ' — по месяцам' : ' — по неделям';

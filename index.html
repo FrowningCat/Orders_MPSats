@@ -22,16 +22,21 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 .card h2 .h2-text { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
 .layout { display:flex; align-items:flex-start; }
 .sidebar {
-  width:270px; flex-shrink:0;
+  width:280px; flex-shrink:0;
   background:#151824; border-right:1px solid #2d3148;
-  padding:20px 18px 24px;
+  padding:24px 20px 32px;
   position:sticky; top:0; align-self:flex-start;
-  max-height:100vh; overflow-y:auto;
-  display:flex; flex-direction:column; gap:16px;
+  display:flex; flex-direction:column; gap:18px;
 }
 .main-content { flex:1; min-width:0; }
-.sidebar .filter-group input, .sidebar .filter-group select { width:100%; }
-.sidebar .multiselect-btn { width:100%; max-width:none; }
+.sidebar .filter-group { gap:7px; }
+.sidebar .filter-group label { font-size:11px; }
+.sidebar .filter-group input, .sidebar .filter-group select { width:100%; box-sizing:border-box; }
+.sidebar .multiselect { width:100%; }
+.sidebar .multiselect-btn { width:100%; max-width:none; box-sizing:border-box; }
+.sidebar .multiselect-panel { position:absolute; left:0; right:0; width:auto; min-width:0; max-width:none; box-sizing:border-box; }
+.sidebar .checkbox-filter { padding:4px 0 2px; }
+.sidebar .btn-reset { width:100%; box-sizing:border-box; }
 .sidebar .btn-reset { width:100%; text-align:center; margin-top:4px; }
 .sidebar-title { font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:#64748b; font-weight:600; margin-bottom:2px; }
 .filter-group { display:flex; flex-direction:column; gap:5px; }

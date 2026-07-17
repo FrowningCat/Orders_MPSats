@@ -78,7 +78,8 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 .trend-list { list-style:none; padding:0; font-size:13px; line-height:1.6; }
 .trend-list li { padding:7px 0; border-bottom:1px solid #1e2235; display:flex; align-items:baseline; gap:8px; }
 .trend-list li:last-child { border-bottom:none; }
-.trend-cat { color:#e2e8f0; font-weight:600; min-width:160px; }
+.trend-cat { color:#e2e8f0; font-weight:600; min-width:160px; cursor:pointer; }
+.trend-cat:hover { color:#60a5fa; text-decoration:underline; }
 .trend-arrow-up { color:#4ade80; font-weight:700; }
 .trend-arrow-down { color:#f87171; font-weight:700; }
 .trend-date { color:#64748b; font-size:12px; margin-left:auto; }
@@ -115,7 +116,6 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
   <h1>📊 WB Аналитика — Дашборд</h1>
   <div style="display:flex;align-items:center;gap:16px;">
     <span id="updated"></span>
-    <button type="button" class="docs-btn" id="exportAllBtn" style="background:#14532d;border-color:#16a34a;color:#dcfce7;cursor:pointer;">⬇ Скачать всё в Excel</button>
     <a href="docs.html" target="_blank" class="docs-btn">📖 Как считаются графики</a>
   </div>
 </header>
@@ -146,6 +146,7 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
       </div>
     </div>
   </div>
+  <button type="button" id="exportAllBtn" style="background:#14532d;border:1px solid #16a34a;color:#dcfce7;cursor:pointer;border-radius:6px;padding:8px 12px;font-size:12.5px;width:100%;box-sizing:border-box;">⬇ Скачать всё в Excel</button>
   <div class="filter-group">
     <label>Пол</label>
     <div class="multiselect" id="fGenderWrap">
@@ -1707,8 +1708,17 @@ function renderCategoryTrends(kwRows, itemFilterArr, minAbs = 2000) {
     const label = it.type==='up' ? 'начало роста продаж' : 'падение продаж';
     const pct = Math.round(Math.abs(it.change) * 100);
     const li = document.createElement('li');
-    li.innerHTML = `<span class="trend-cat">${it.subj}</span> ${arrow} ${label} (${pct}%) <span class="trend-date">с ${formatMonthLabel(it.date)}</span>`;
+    li.innerHTML = `<span class="trend-cat" title="Кликните, чтобы отфильтровать весь дашборд по этой категории">${it.subj}</span> ${arrow} ${label} (${pct}%) <span class="trend-date">с ${formatMonthLabel(it.date)}</span>`;
     list.appendChild(li);
+    // Клик по названию категории — та же логика, что и клик по строке в
+    // «Топ-50»: подставляет текст в «Поиск по запросу» и перефильтровывает
+    // весь дашборд. Название приходит из таксономии MPStats (item_name), не
+    // всегда совпадает буквально с чекбоксами "Категории" (там таксономия WB),
+    // поэтому используем поиск, а не пытаемся отметить несуществующий чекбокс.
+    li.querySelector('.trend-cat').addEventListener('click', () => {
+      document.getElementById('fSearch').value = it.subj;
+      applyFilters();
+    });
   });
 }
 

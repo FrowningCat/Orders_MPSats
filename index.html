@@ -680,7 +680,7 @@ document.getElementById('exportTopBtn').addEventListener('click', () =>
 document.getElementById('exportAllBtn').addEventListener('click', exportAllToExcel);
 
 const allOrderDates = DATA.orders_daily.map(r=>r.order_date).sort();
-const minDate = allOrderDates[0] || '2025-07-01';
+const minDate = allOrderDates[0] || '2025-06-01';
 const maxDate = allOrderDates[allOrderDates.length-1] || '2026-06-30';
 document.getElementById('fDateFrom').value = minDate;
 document.getElementById('fDateTo').value   = maxDate;

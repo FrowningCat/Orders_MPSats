@@ -3,11 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Аналитика WB — Дашборд</title>
+<title>Аналитика WB — Демо (тестовые данные)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#0f1117; color:#e2e8f0; }
@@ -108,20 +106,23 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 }
 #loadingOverlay.is-error { color:#f87171; }
 
+
+.demo-badge { display:inline-block; margin-left:10px; padding:3px 9px; border-radius:4px; background:#fbbf24; color:#1a1d27; font-size:11px; font-weight:700; letter-spacing:0.5px; vertical-align:middle; }
+.demo-banner { background:rgba(251,191,36,0.10); border-bottom:1px solid rgba(251,191,36,0.35); color:#fcd34d; font-size:13px; padding:9px 28px; }
+.demo-banner b { color:#fbbf24; }
 </style>
 </head>
 <body>
-<div id="loadingOverlay">Загрузка данных из Firestore…</div>
+<div id="loadingOverlay">Генерация тестовых данных…</div>
 <header>
-  <h1>📊 WB Аналитика — Дашборд</h1>
+  <h1>📊 WB Аналитика — Дашборд <span class="demo-badge">ТЕСТОВЫЕ ДАННЫЕ</span></h1>
   <div style="display:flex;align-items:center;gap:16px;">
     <span id="updated"></span>
     <a href="docs.html" target="_blank" class="docs-btn">📖 Как считаются графики</a>
   </div>
 </header>
-<div id="staleWarning" style="display:none;background:#3a1d1d;border-bottom:1px solid #7f1d1d;color:#fca5a5;font-size:13px;padding:8px 28px;">
-  ⚠️ Данные не обновлялись давно — проверь, что <code style="background:#1a1d27;padding:1px 6px;border-radius:3px;">Дашборд_WB_обновление_данных.py</code> отработал по расписанию.
-</div>
+<div class="demo-banner"><b>Тестовые данные.</b> Демонстрационная версия дашборда: все цифры сгенерированы и не отражают реальные продажи, поставки и поисковые запросы.</div>
+<div id="staleWarning" style="display:none"></div>
 <div class="layout">
 <aside class="sidebar">
   <div class="sidebar-title">Фильтры</div>
@@ -250,13 +251,6 @@ header h1 { font-size:17px; font-weight:600; color:#fff; }
 </main>
 </div>
 <script>
-const FIREBASE_CONFIG = {"apiKey": "AIzaSyCbiW-rv05DdI_Y5a5WtCCyuzA8BgjD6rk", "authDomain": "task-ebb73.firebaseapp.com", "projectId": "task-ebb73", "storageBucket": "task-ebb73.firebasestorage.app", "messagingSenderId": "1031614791847", "appId": "1:1031614791847:web:a4d2c9e0b4299af979db82"};
-const CHUNK_COLLECTION = "wb_yoy_dashboard_chunks";
-const META_DOC_PATH = "wb_yoy_dashboard_meta/latest";
-
-firebase.initializeApp(FIREBASE_CONFIG);
-const db = firebase.firestore();
-
 let DATA = { updated_at: '', orders_daily: [], order_subjects: [], order_genders: [], kw_weekly: [], top_keywords: [], supplies_daily: [] };
 
 // Данные для экспорта в Excel — заполняются заново при каждом applyFilters(),
@@ -271,7 +265,7 @@ function exportToExcel(rows, filename, sheetName) {
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Данные');
-  XLSX.writeFile(wb, filename);
+  XLSX.writeFile(wb, 'ДЕМО_' + filename);
 }
 
 function exportAllToExcel() {
@@ -293,88 +287,224 @@ function exportAllToExcel() {
     const ws = XLSX.utils.json_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31)); // лимит Excel — 31 символ в имени листа
   });
-  XLSX.writeFile(wb, 'WB_Дашборд_все_данные.xlsx');
+  XLSX.writeFile(wb, 'ДЕМО_WB_Дашборд_все_данные.xlsx');
 }
 
-async function fetchChunks(dataset, count) {
-  if (!count) return [];
-
-  const ids = [];
-  for (let i = 0; i < count; i++) {
-    ids.push(dataset + '_' + String(i).padStart(4, '0'));
+// ─── ДЕМО: генератор тестовых данных вместо загрузки из базы ───
+// Детерминированный PRNG (mulberry32) — при каждом открытии одни и те же цифры.
+function buildDemoData() {
+  let _s = 20260911 >>> 0;
+  function rnd() {
+    _s = (_s + 0x6D2B79F5) >>> 0;
+    let t = _s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  const jitter = (amp) => 1 + (rnd() * 2 - 1) * amp;
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
   }
 
-  // Раньше здесь был Promise.all с отдельным .get() на КАЖДЫЙ чанк —
-  // при тысячах чанков (top_keywords) это тысячи одновременных запросов,
-  // и Firestore тихо уходит в maximum backoff delay (без ошибки в консоли,
-  // просто вечное "Загрузка данных..."). Вместо этого читаем пачками по 10
-  // документов через where(documentId(), 'in', [...]) — это лимит Firestore
-  // на количество значений в 'in'. Плюс не более 5 таких пачек одновременно
-  // (CONCURRENCY) — достаточно быстро, но не создаёт тот же самый затор.
-  const BATCH = 10;
-  const CONCURRENCY = 5;
+  const DAY = 86400000;
+  const toISO = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const parseISO = (s) => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
+  const START = parseISO('2025-01-01');
+  const END = parseISO('2026-08-31');
+  const FIRST_MONDAY = parseISO('2025-01-06');
+  const LAST_MONDAY = parseISO('2026-08-24');
 
-  const batches = [];
-  for (let i = 0; i < ids.length; i += BATCH) {
-    batches.push(ids.slice(i, i + BATCH));
+  // Сезонность по месяцам (янв..дек), между серединами месяцев — линейная интерполяция.
+  const PROFILES = {
+    summer:  [0.25,0.30,0.50,0.90,1.50,1.90,1.80,1.20,0.60,0.30,0.20,0.20],
+    winter:  [1.30,0.90,0.50,0.30,0.15,0.10,0.10,0.25,0.80,1.60,1.90,1.70],
+    boots:   [1.00,0.90,1.00,0.60,0.25,0.15,0.20,0.60,1.50,1.90,1.50,1.10],
+    demi:    [0.50,0.70,1.30,1.50,1.00,0.60,0.60,1.10,1.60,1.40,0.80,0.50],
+    allyear: [0.70,0.80,1.10,1.30,1.20,1.00,0.95,1.20,1.30,1.10,0.90,0.85],
+    school:  [0.50,0.60,1.00,1.10,0.90,0.60,0.90,2.00,1.60,0.80,0.60,0.70],
+    newyear: [1.00,0.60,0.40,0.20,0.10,0.10,0.10,0.20,0.50,1.20,2.00,2.20],
+  };
+  function season(profile, ms, shiftDays) {
+    const d = new Date(ms + (shiftDays || 0) * DAY);
+    const m = d.getUTCMonth();
+    const pos = (d.getUTCDate() - 15) / 30;
+    const p = PROFILES[profile];
+    const n = pos >= 0 ? (m + 1) % 12 : (m + 11) % 12;
+    const w = Math.abs(pos);
+    return p[m] * (1 - w) + p[n] * w;
   }
 
-  async function fetchBatch(batchIds) {
-    const snap = await db.collection(CHUNK_COLLECTION)
-      .where(firebase.firestore.FieldPath.documentId(), 'in', batchIds)
-      .get();
-    let out = [];
-    snap.forEach(function(doc) {
-      out = out.concat(doc.data().rows || []);
-    });
-    return out;
+  // Промо-события маркетплейса и праздники.
+  const KIDS = ['Девочки', 'Мальчики', 'Детский'];
+  function eventMult(ms, gender) {
+    const d = new Date(ms);
+    const m = d.getUTCMonth() + 1, day = d.getUTCDate();
+    let k = 1;
+    if (m === 1 && day <= 8) k *= 0.6;
+    if (((m === 2 && day >= 26) || (m === 3 && day <= 7)) && gender === 'Женский') k *= 1.35;
+    if (((m === 8 && day >= 10) || (m === 9 && day <= 5)) && KIDS.includes(gender)) k *= 1.5;
+    if (m === 11 && day >= 10 && day <= 12) k *= 1.6;
+    if (m === 11 && day >= 24) k *= 1.45;
+    if (m === 12 && day >= 14 && day <= 28) k *= 1.2;
+    return k;
   }
+  const WEEKDAY = [1.08, 1.05, 1.00, 0.97, 0.95, 0.96, 1.02]; // вс..сб
 
-  let rows = [];
-  for (let i = 0; i < batches.length; i += CONCURRENCY) {
-    const slice = batches.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(slice.map(fetchBatch));
-    results.forEach(r => { rows = rows.concat(r); });
-  }
+  // name, пол (таксономия WB), сезонность, заказов/день в базе, средний чек, рост за год, доля «наших»
+  const SUBJECTS = [
+    { name:'Кроссовки',  g:['Женский','Мужской','Девочки','Мальчики'], p:'allyear', base:70, price:3900, yoy:1.28, our:0.70 },
+    { name:'Кеды',       g:['Женский','Мужской','Детский'],            p:'demi',    base:26, price:2700, yoy:1.12, our:0.55 },
+    { name:'Слипоны',    g:['Женский','Мужской'],                      p:'summer',  base:9,  price:2100, yoy:0.85, our:0.40 },
+    { name:'Туфли',      g:['Женский','Девочки'],                      p:'school',  base:18, price:3300, yoy:1.05, our:0.65 },
+    { name:'Лоферы',     g:['Женский','Мужской'],                      p:'demi',    base:14, price:4200, yoy:1.45, our:0.80 },
+    { name:'Мокасины',   g:['Мужской','Женский'],                      p:'summer',  base:10, price:3400, yoy:0.92, our:0.50 },
+    { name:'Балетки',    g:['Женский','Девочки'],                      p:'summer',  base:8,  price:1900, yoy:0.80, our:0.45 },
+    { name:'Босоножки',  g:['Женский','Девочки'],                      p:'summer',  base:22, price:2800, yoy:1.20, our:0.75 },
+    { name:'Сандалии',   g:['Женский','Мужской','Девочки','Мальчики'], p:'summer',  base:20, price:2400, yoy:1.30, our:0.60 },
+    { name:'Сабо',       g:['Женский','Мужской'],                      p:'summer',  base:16, price:1700, yoy:1.60, our:0.85 },
+    { name:'Шлепанцы',   g:['Женский','Мужской','Детский'],            p:'summer',  base:24, price:950,  yoy:1.10, our:0.50 },
+    { name:'Ботинки',    g:['Женский','Мужской','Девочки','Мальчики'], p:'boots',   base:32, price:5600, yoy:1.18, our:0.65 },
+    { name:'Сапоги',     g:['Женский','Девочки'],                      p:'winter',  base:22, price:6800, yoy:1.08, our:0.70 },
+    { name:'Полусапоги', g:['Женский'],                                p:'winter',  base:10, price:5900, yoy:0.90, our:0.55 },
+    { name:'Угги',       g:['Женский','Детский'],                      p:'newyear', base:16, price:3600, yoy:1.35, our:0.75 },
+    { name:'Дутики',     g:['Женский','Детский'],                      p:'newyear', base:18, price:3100, yoy:1.22, our:0.60 },
+  ];
+  const GENDER_W = { 'Женский':1, 'Мужской':0.45, 'Девочки':0.2, 'Мальчики':0.16, 'Детский':0.22 };
 
-  return rows;
-}
-
-async function loadDashboard() {
-  const overlay = document.getElementById('loadingOverlay');
-  try {
-    const metaSnap = await db.doc(META_DOC_PATH).get();
-    if (!metaSnap.exists) {
-      overlay.classList.add('is-error');
-      overlay.textContent = 'Нет данных в Firestore. Запусти Дашборд_WB_обновление_данных.py.';
-      return;
+  // ── Заказы по дням ──
+  const orders_daily = [];
+  const dailyTotal = {};
+  for (let t = START; t <= END; t += DAY) {
+    const date = toISO(t);
+    const years = (t - START) / (365 * DAY);
+    const wd = WEEKDAY[new Date(t).getUTCDay()];
+    for (const s of SUBJECTS) {
+      const gsum = s.g.reduce((a, g) => a + GENDER_W[g], 0);
+      const trend = Math.pow(s.yoy, years);
+      const seas = season(s.p, t, 0);
+      const ourShare = Math.min(0.95, s.our * (1 + 0.12 * years));
+      for (const g of s.g) {
+        const ev = eventMult(t, g);
+        const lambda = s.base * seas * trend * wd * ev * (GENDER_W[g] / gsum);
+        const total = Math.max(0, Math.round(lambda * jitter(0.22) + (rnd() - 0.5)));
+        if (!total) continue;
+        const our = Math.min(total, Math.max(0, Math.round(total * ourShare * jitter(0.12))));
+        const price = s.price * (ev > 1.3 ? 0.85 : 1);
+        if (our) orders_daily.push({ order_date:date, subject_name:s.name, gender:g, is_our:1, orders_cnt:our, revenue:Math.round(our * price * jitter(0.08)) });
+        if (total - our) orders_daily.push({ order_date:date, subject_name:s.name, gender:g, is_our:0, orders_cnt:total - our, revenue:Math.round((total - our) * price * jitter(0.08)) });
+        dailyTotal[date] = (dailyTotal[date] || 0) + total;
+      }
     }
-    const meta = metaSnap.data();
-    DATA.updated_at = meta.updated_at || '';
-    const chunks = meta.chunks || {};
-
-    const [orders_daily, order_subjects, order_genders, kw_weekly, top_keywords, supplies_daily] = await Promise.all([
-      fetchChunks('orders_daily', chunks.orders_daily || 0),
-      fetchChunks('order_subjects', chunks.order_subjects || 0),
-      fetchChunks('order_genders', chunks.order_genders || 0),
-      fetchChunks('kw_weekly', chunks.kw_weekly || 0),
-      fetchChunks('top_keywords', chunks.top_keywords || 0),
-      fetchChunks('supplies_daily', chunks.supplies_daily || 0),
-    ]);
-    DATA.orders_daily   = orders_daily;
-    DATA.order_subjects = order_subjects;
-    DATA.order_genders  = order_genders;
-    DATA.kw_weekly      = kw_weekly;
-    DATA.top_keywords   = top_keywords;
-    DATA.supplies_daily = supplies_daily;
-
-    overlay.style.display = 'none';
-    initDashboard();
-  } catch (err) {
-    console.error('Firestore load error:', err);
-    overlay.classList.add('is-error');
-    overlay.textContent = 'Ошибка загрузки данных из Firestore — проверь правила Firestore (Rules) и консоль браузера.';
   }
+
+  // ── MPStats: частоты запросов по неделям ──
+  const MP_GENDER = { 'Женский':['женские'], 'Мужской':['мужские'], 'Девочки':['для девочек'], 'Мальчики':['для мальчиков'], 'Детский':['для девочек','для мальчиков'] };
+  const MP_GENDER_W = { 'женские':1, 'мужские':0.55, 'для девочек':0.3, 'для мальчиков':0.25 };
+  const MODS = {
+    common: ['белые','черные','кожаные','бежевые','на платформе','натуральная кожа','большие размеры','легкие'],
+    summer: ['летние','на липучке','с открытым носом','текстильные','ортопедические'],
+    winter: ['зимние','с мехом','натуральный мех','непромокаемые','теплые'],
+    demi:   ['демисезонные','весенние','замшевые','осенние'],
+  };
+  const PROFILE_MODS = { summer:'summer', winter:'winter', boots:'winter', newyear:'winter', demi:'demi', allyear:'demi', school:'demi' };
+
+  const MP_ITEMS = SUBJECTS.map(s => ({
+    name: s.name, p: s.p, scale: s.base / 70,
+    mg: [...new Set(s.g.flatMap(g => MP_GENDER[g]))],
+  })).concat([
+    // Категории рынка, которых у нас нет в заказах
+    { name:'Валенки', p:'newyear', scale:0.18, mg:['женские','для девочек','для мальчиков'] },
+    { name:'Бутсы',   p:'demi',    scale:0.25, mg:['мужские','для мальчиков'] },
+    { name:'Чешки',   p:'school',  scale:0.12, mg:['для девочек','для мальчиков'] },
+    { name:'Галоши',  p:'demi',    scale:0.08, mg:['женские','мужские'] },
+  ]);
+
+  function buildKeywords(item, mg) {
+    const base = item.name.toLowerCase() + ' ' + mg;
+    const pool = shuffle(MODS.common.concat(MODS[PROFILE_MODS[item.p]]));
+    const top = 380000 * item.scale * MP_GENDER_W[mg];
+    const kw = [
+      { keyword: base,                 type:'ВЧ', base: top,        wb: 60000 + rnd() * 190000 },
+      { keyword: base + ' ' + pool[0], type:'ВЧ', base: top * 0.28, wb: 30000 + rnd() * 90000 },
+    ];
+    for (let i = 1; i <= 3; i++) kw.push({ keyword: base + ' ' + pool[i], type:'СЧ', base: top * (0.04 + rnd() * 0.05), wb: 3000 + rnd() * 27000 });
+    for (let i = 0; i < 5; i++) kw.push({ keyword: base + ' ' + pool[4 + i] + ' ' + pool[(i + 1) % 4], type:'НЧ', base: top * (0.004 + rnd() * 0.008), wb: 100 + rnd() * 2900 });
+    return kw;
+  }
+
+  const kw_weekly = [];
+  const top_keywords = [];
+  for (const it of MP_ITEMS) {
+    const mpYoy = 0.95 + rnd() * 0.3;
+    for (const mg of it.mg) {
+      const kwList = buildKeywords(it, mg);
+      for (let w = FIRST_MONDAY; w <= LAST_MONDAY; w += 7 * DAY) {
+        const d1 = toISO(w), d2 = toISO(w + 6 * DAY);
+        const years = (w - START) / (365 * DAY);
+        const seas = season(it.p, w + 3 * DAY, 14); // спрос опережает заказы ~на 2 недели
+        const trend = Math.pow(mpYoy, years);
+        let hf = 0, mf = 0, lf = 0;
+        for (const k of kwList) {
+          const f = Math.max(0, Math.round(k.base * seas * trend * jitter(0.12)));
+          top_keywords.push({ d1, d2, keyword:k.keyword, freq_type:k.type, gender:mg, item_name:it.name,
+                              total_freq:f, total_wb:Math.round(k.wb * (1 + 0.25 * years) * jitter(0.05)) });
+          if (k.type === 'ВЧ') hf += f; else if (k.type === 'СЧ') mf += f; else lf += f;
+        }
+        // хвост запросов, не попавших в топ, — поверх суммы по ключевикам
+        hf = Math.round(hf * 1.15); mf = Math.round(mf * 1.8); lf = Math.round(lf * 4);
+        kw_weekly.push({ d1, d2, item_name:it.name, gender:mg, hf_freq:hf, mf_freq:mf, lf_freq:lf, total_freq:hf + mf + lf });
+      }
+    }
+  }
+
+  // ── Поставки: завоз под спрос через 2–4 недели, 1–3 поставки в неделю ──
+  const weekOrders = {};
+  for (const [date, v] of Object.entries(dailyTotal)) {
+    const ms = parseISO(date);
+    const mon = ms - ((new Date(ms).getUTCDay() + 6) % 7) * DAY;
+    weekOrders[mon] = (weekOrders[mon] || 0) + v;
+  }
+  const supplies_daily = [];
+  for (let w = parseISO('2024-12-30'); w <= LAST_MONDAY; w += 7 * DAY) {
+    if (rnd() < 0.08) continue; // неделя без поставок
+    let need = 0, n = 0;
+    for (let k = 2; k <= 4; k++) { const v = weekOrders[w + k * 7 * DAY]; if (v) { need += v; n++; } }
+    if (!n) { const v = weekOrders[w]; if (!v) continue; need = v; n = 1; }
+    const qty = need / n * 1.05 * jitter(0.25);
+    const cnt = 1 + Math.floor(rnd() * 3);
+    for (let i = 0; i < cnt; i++) {
+      const ms = w + Math.floor(rnd() * 6) * DAY;
+      if (ms < START || ms > END) continue;
+      supplies_daily.push({ supply_date: toISO(ms), supply_qty: Math.max(1, Math.round(qty / cnt * jitter(0.3))) });
+    }
+  }
+
+  return {
+    updated_at: '2026-09-01 06:00',
+    orders_daily,
+    order_subjects: SUBJECTS.map(s => ({ subject_name: s.name })),
+    order_genders: ['Женский','Мужской','Девочки','Мальчики','Детский'].map(g => ({ gender: g })),
+    kw_weekly,
+    top_keywords,
+    supplies_daily,
+  };
+}
+
+function loadDashboard() {
+  const overlay = document.getElementById('loadingOverlay');
+  setTimeout(() => {
+    try {
+      DATA = buildDemoData();
+      overlay.style.display = 'none';
+      initDashboard();
+    } catch (err) {
+      console.error('Demo data error:', err);
+      overlay.classList.add('is-error');
+      overlay.textContent = 'Ошибка генерации тестовых данных — подробности в консоли браузера.';
+    }
+  }, 20);
 }
 
 function initDashboard() {
@@ -420,7 +550,7 @@ const OPT = {
 };
 
 // Инициализация фильтров
-document.getElementById('updated').textContent = 'Обновлено: ' + DATA.updated_at;
+document.getElementById('updated').textContent = 'Тестовые данные на ' + DATA.updated_at;
 
 // Данные обновляются раз в неделю по расписанию — если прошло заметно
 // больше недели (порог с запасом — 9 дней), скорее всего push-скрипт
